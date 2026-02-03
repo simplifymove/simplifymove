@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import { Card } from '../ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
-import { UserManagement } from './UserManagement';
 import { WalletManagementAdmin } from './WalletManagementAdmin';
 import { PolicyBudget } from './PolicyBudget';
 import { CourierManagementClean } from './CourierManagementClean';
@@ -36,10 +35,6 @@ export function ManageConsolidated() {
             Courier Services
           </TabsTrigger>
         </TabsList>
-
-        <TabsContent value="employees">
-          <UserManagement />
-        </TabsContent>
 
         <TabsContent value="wallets">
           <WalletManagementAdmin />
