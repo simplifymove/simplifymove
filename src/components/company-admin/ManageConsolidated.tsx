@@ -4,7 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { WalletManagementAdmin } from './WalletManagementAdmin';
 import { PolicyBudget } from './PolicyBudget';
 import { CourierManagementClean } from './CourierManagementClean';
-import { Users, Wallet, Shield, TrendingUp, Package } from 'lucide-react';
+import { Users, Wallet, Shield, Package } from 'lucide-react';
 
 export function ManageConsolidated() {
   return (
