@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -24,9 +24,11 @@ import {
   CheckCircle2,
   Settings,
   DollarSign,
-  Globe
+  Globe,
+  Loader
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
+import { auditLogAPI } from '../../lib/apiClient';
 
 interface PlatformAuditLog {
   id: string;
@@ -208,13 +210,54 @@ const mockPlatformLogs: PlatformAuditLog[] = [
 ];
 
 export function PlatformAuditLogsClean() {
-  const [logs, setLogs] = useState<PlatformAuditLog[]>(mockPlatformLogs);
+  const [logs, setLogs] = useState<PlatformAuditLog[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
   const [selectedLog, setSelectedLog] = useState<PlatformAuditLog | null>(null);
   const [showDetailsDialog, setShowDetailsDialog] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [severityFilter, setSeverityFilter] = useState('all');
   const [statusFilter, setStatusFilter] = useState('all');
+
+  // Load audit logs from API on mount
+  useEffect(() => {
+    const loadLogs = async () => {
+      try {
+        setIsLoading(true);
+        const response = await auditLogAPI.getAll({ limit: 100, page: 1 });
+        const logsData = Array.isArray(response.data) ? response.data : [];
+        
+        // Map backend data to frontend interface
+        const mappedLogs = logsData.map((log: any) => ({
+          id: log.id,
+          timestamp: log.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
+          time: log.createdAt?.split('T')[1]?.substring(0, 5) || '00:00',
+          action: log.action,
+          category: log.category || 'system',
+          performedBy: log.performedBy || 'System',
+          performedByRole: log.performedByRole || 'system',
+          companyId: log.companyId,
+          targetEntity: log.targetEntity,
+          targetId: log.targetId,
+          details: log.details,
+          ipAddress: log.ipAddress,
+          status: log.status || 'success',
+          severity: log.severity || 'low',
+          changes: log.changes || [],
+        }));
+        
+        setLogs(mappedLogs);
+      } catch (error) {
+        console.error('Error loading audit logs:', error);
+        toast.error('Failed to load audit logs');
+        setLogs([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadLogs();
+  }, []);
 
   // Get category icon
   const getCategoryIcon = (category: string) => {
@@ -410,7 +453,13 @@ export function PlatformAuditLogsClean() {
 
       {/* Logs List */}
       <div className="max-w-[1800px] mx-auto px-6 lg:px-12 py-8">
-        {filteredLogs.length === 0 ? (
+        {isLoading ? (
+          <Card className="p-12 text-center">
+            <Loader className="w-16 h-16 text-gray-400 mx-auto mb-4 animate-spin" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Loading audit logs...</h3>
+            <p className="text-gray-600">Please wait while we fetch the logs</p>
+          </Card>
+        ) : filteredLogs.length === 0 ? (
           <Card className="p-12 text-center">
             <FileText className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-900 mb-2">No audit logs found</h3>

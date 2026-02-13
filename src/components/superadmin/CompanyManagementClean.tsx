@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Card } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -32,9 +32,11 @@ import {
   XCircle,
   AlertCircle,
   Crown,
-  Settings
+  Settings,
+  Loader
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
+import { companyAPI } from '../../lib/apiClient';
 
 interface Company {
   id: string;
@@ -167,7 +169,9 @@ const mockCompanies: Company[] = [
 ];
 
 export function CompanyManagementClean() {
-  const [companies, setCompanies] = useState<Company[]>(mockCompanies);
+  const [companies, setCompanies] = useState<Company[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSaving, setIsSaving] = useState(false);
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [showAddDialog, setShowAddDialog] = useState(false);
   const [showEditDialog, setShowEditDialog] = useState(false);
@@ -193,6 +197,51 @@ export function CompanyManagementClean() {
     expiryDate: '',
   });
 
+  // Load companies on mount
+  useEffect(() => {
+    const loadCompanies = async () => {
+      try {
+        setIsLoading(true);
+        const response = await companyAPI.getAll({ limit: 100 });
+        const companiesData = Array.isArray(response.data) ? response.data : [];
+        
+        // Map backend data to frontend interface
+        const mappedCompanies = companiesData.map((comp: any) => ({
+          id: comp.id,
+          name: comp.name,
+          industry: comp.industry || 'Technology',
+          status: comp.status || 'active',
+          plan: (comp.companySize || 'basic').toLowerCase() as any,
+          registrationDate: comp.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
+          expiryDate: comp.expiryDate || new Date(Date.now() + 365*24*60*60*1000).toISOString().split('T')[0],
+          contactPerson: 'Admin',
+          email: comp.email,
+          phone: comp.phone || '',
+          address: comp.street || 'N/A',
+          city: comp.city || 'N/A',
+          country: comp.country || 'India',
+          employeeCount: 0,
+          adminCount: 1,
+          totalBookings: 0,
+          monthlyRevenue: 0,
+          totalRevenue: 0,
+          features: ['Travel Booking', 'Expense Management'],
+        }));
+        
+        setCompanies(mappedCompanies);
+      } catch (error) {
+        console.error('Error loading companies:', error);
+        toast.error('Failed to load companies');
+        // Fallback to empty array
+        setCompanies([]);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+
+    loadCompanies();
+  }, []);
+
   // Reset form
   const resetForm = () => {
     setCompanyForm({
@@ -210,41 +259,68 @@ export function CompanyManagementClean() {
     });
   };
 
-  // Add company
-  const handleAddCompany = () => {
-    if (!companyForm.name || !companyForm.email || !companyForm.contactPerson) {
+  // Add company via API
+  const handleAddCompany = async () => {
+    if (!companyForm.name || !companyForm.email) {
       toast.error('Please fill in all required fields');
       return;
     }
 
-    const newCompany: Company = {
-      id: `COMP-${String(companies.length + 1).padStart(3, '0')}`,
-      name: companyForm.name,
-      industry: companyForm.industry,
-      status: companyForm.status,
-      plan: companyForm.plan,
-      registrationDate: new Date().toISOString().split('T')[0],
-      expiryDate: companyForm.expiryDate,
-      contactPerson: companyForm.contactPerson,
-      email: companyForm.email,
-      phone: companyForm.phone,
-      address: companyForm.address,
-      city: companyForm.city,
-      country: companyForm.country,
-      employeeCount: 0,
-      adminCount: 0,
-      totalBookings: 0,
-      monthlyRevenue: 0,
-      totalRevenue: 0,
-      features: companyForm.plan === 'enterprise' ? ['Travel Booking', 'Logistics', 'Expense Management', 'Analytics', 'API Access'] :
-                companyForm.plan === 'pro' ? ['Travel Booking', 'Expense Management', 'Analytics'] :
-                ['Travel Booking', 'Expense Management'],
-    };
+    try {
+      setIsSaving(true);
+      
+      // Prepare data for backend
+      const createData = {
+        name: companyForm.name,
+        email: companyForm.email,
+        phone: companyForm.phone,
+        industry: companyForm.industry,
+        companySize: companyForm.plan || 'basic',
+        street: companyForm.address,
+        city: companyForm.city,
+        country: companyForm.country,
+        status: companyForm.status,
+      };
 
-    setCompanies([newCompany, ...companies]);
-    toast.success('Company created successfully!');
-    setShowAddDialog(false);
-    resetForm();
+      const response = await companyAPI.create(createData);
+      
+      if (response.success) {
+        // Map response to frontend format
+        const newCompany: Company = {
+          id: response.data.id,
+          name: response.data.name,
+          industry: response.data.industry,
+          status: response.data.status,
+          plan: companyForm.plan,
+          registrationDate: new Date().toISOString().split('T')[0],
+          expiryDate: companyForm.expiryDate || new Date(Date.now() + 365*24*60*60*1000).toISOString().split('T')[0],
+          contactPerson: companyForm.contactPerson || 'Admin',
+          email: response.data.email,
+          phone: response.data.phone,
+          address: response.data.street,
+          city: response.data.city,
+          country: response.data.country,
+          employeeCount: 0,
+          adminCount: 1,
+          totalBookings: 0,
+          monthlyRevenue: 0,
+          totalRevenue: 0,
+          features: companyForm.plan === 'enterprise' ? ['Travel Booking', 'Logistics', 'Expense Management', 'Analytics', 'API Access'] :
+                    companyForm.plan === 'pro' ? ['Travel Booking', 'Expense Management', 'Analytics'] :
+                    ['Travel Booking', 'Expense Management'],
+        };
+
+        setCompanies([newCompany, ...companies]);
+        toast.success('Company created successfully!');
+        setShowAddDialog(false);
+        resetForm();
+      }
+    } catch (error: any) {
+      console.error('Error creating company:', error);
+      toast.error(error.message || 'Failed to create company');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Edit company
@@ -266,37 +342,62 @@ export function CompanyManagementClean() {
     setShowEditDialog(true);
   };
 
-  const handleUpdateCompany = () => {
+  // Update company via API
+  const handleUpdateCompany = async () => {
     if (!selectedCompany) return;
 
-    if (!companyForm.name || !companyForm.email || !companyForm.contactPerson) {
+    if (!companyForm.name || !companyForm.email) {
       toast.error('Please fill in all required fields');
       return;
     }
 
-    setCompanies(companies.map(c =>
-      c.id === selectedCompany.id
-        ? {
-            ...c,
-            name: companyForm.name,
-            industry: companyForm.industry,
-            status: companyForm.status,
-            plan: companyForm.plan,
-            contactPerson: companyForm.contactPerson,
-            email: companyForm.email,
-            phone: companyForm.phone,
-            address: companyForm.address,
-            city: companyForm.city,
-            country: companyForm.country,
-            expiryDate: companyForm.expiryDate,
-          }
-        : c
-    ));
+    try {
+      setIsSaving(true);
+      
+      const updateData = {
+        name: companyForm.name,
+        email: companyForm.email,
+        phone: companyForm.phone,
+        industry: companyForm.industry,
+        companySize: companyForm.plan,
+        street: companyForm.address,
+        city: companyForm.city,
+        country: companyForm.country,
+      };
 
-    toast.success('Company updated successfully!');
-    setShowEditDialog(false);
-    setSelectedCompany(null);
-    resetForm();
+      const response = await companyAPI.update(selectedCompany.id, updateData);
+      
+      if (response.success) {
+        setCompanies(companies.map(c =>
+          c.id === selectedCompany.id
+            ? {
+                ...c,
+                name: companyForm.name,
+                industry: companyForm.industry,
+                status: companyForm.status,
+                plan: companyForm.plan,
+                contactPerson: companyForm.contactPerson,
+                email: companyForm.email,
+                phone: companyForm.phone,
+                address: companyForm.address,
+                city: companyForm.city,
+                country: companyForm.country,
+                expiryDate: companyForm.expiryDate,
+              }
+            : c
+        ));
+
+        toast.success('Company updated successfully!');
+        setShowEditDialog(false);
+        setSelectedCompany(null);
+        resetForm();
+      }
+    } catch (error: any) {
+      console.error('Error updating company:', error);
+      toast.error(error.message || 'Failed to update company');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   // Delete company
@@ -305,21 +406,43 @@ export function CompanyManagementClean() {
     setShowDeleteDialog(true);
   };
 
-  const handleDeleteConfirm = () => {
+  // Delete company via API
+  const handleDeleteConfirm = async () => {
     if (!selectedCompany) return;
 
-    setCompanies(companies.filter(c => c.id !== selectedCompany.id));
-    toast.success('Company deleted successfully');
-    setShowDeleteDialog(false);
-    setSelectedCompany(null);
+    try {
+      setIsSaving(true);
+      const response = await companyAPI.delete(selectedCompany.id);
+      
+      if (response.success) {
+        setCompanies(companies.filter(c => c.id !== selectedCompany.id));
+        toast.success('Company deleted successfully');
+        setShowDeleteDialog(false);
+        setSelectedCompany(null);
+      }
+    } catch (error: any) {
+      console.error('Error deleting company:', error);
+      toast.error(error.message || 'Failed to delete company');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
-  // Suspend/Activate company
-  const handleToggleStatus = (companyId: string, newStatus: 'active' | 'suspended') => {
-    setCompanies(companies.map(c =>
-      c.id === companyId ? { ...c, status: newStatus } : c
-    ));
-    toast.success(`Company ${newStatus === 'active' ? 'activated' : 'suspended'}`);
+  // Toggle company status via API
+  const handleToggleStatus = async (companyId: string, newStatus: 'active' | 'suspended') => {
+    try {
+      const response = await companyAPI.updateStatus(companyId, newStatus);
+      
+      if (response.success) {
+        setCompanies(companies.map(c =>
+          c.id === companyId ? { ...c, status: newStatus } : c
+        ));
+        toast.success(`Company ${newStatus === 'active' ? 'activated' : 'suspended'} successfully`);
+      }
+    } catch (error: any) {
+      console.error('Error updating company status:', error);
+      toast.error(error.message || 'Failed to update company status');
+    }
   };
 
   // Get status color
@@ -495,7 +618,13 @@ export function CompanyManagementClean() {
 
       {/* Companies List */}
       <div className="max-w-[1800px] mx-auto px-6 lg:px-12 py-8">
-        {filteredCompanies.length === 0 ? (
+        {isLoading ? (
+          <Card className="p-12 text-center">
+            <Loader className="w-16 h-16 text-gray-400 mx-auto mb-4 animate-spin" />
+            <h3 className="text-lg font-semibold text-gray-900 mb-2">Loading companies...</h3>
+            <p className="text-gray-600">Please wait while we fetch your companies</p>
+          </Card>
+        ) : filteredCompanies.length === 0 ? (
           <Card className="p-12 text-center">
             <Building2 className="w-16 h-16 text-gray-300 mx-auto mb-4" />
             <h3 className="text-lg font-semibold text-gray-900 mb-2">No companies found</h3>
@@ -810,14 +939,22 @@ export function CompanyManagementClean() {
               setShowAddDialog(false);
               setShowEditDialog(false);
               resetForm();
-            }}>
+            }} disabled={isSaving}>
               Cancel
             </Button>
             <Button
               onClick={showAddDialog ? handleAddCompany : handleUpdateCompany}
               className="bg-[#000035] hover:bg-[#000055]"
+              disabled={isSaving}
             >
-              {showAddDialog ? 'Add Company' : 'Update Company'}
+              {isSaving ? (
+                <>
+                  <Loader className="w-4 h-4 mr-2 animate-spin" />
+                  Saving...
+                </>
+              ) : (
+                showAddDialog ? 'Add Company' : 'Update Company'
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
