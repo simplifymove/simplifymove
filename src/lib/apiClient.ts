@@ -3,7 +3,7 @@
  * Centralized API calls for all backend endpoints
  */
 
-const API_BASE_URL = process.env.REACT_APP_API_URL || 'http://localhost:5001/api/v1';
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5001/api/v1';
 
 // Helper function for API calls
 const apiCall = async (endpoint: string, method: string = 'GET', data?: any) => {

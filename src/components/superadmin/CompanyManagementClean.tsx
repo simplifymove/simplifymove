@@ -35,13 +35,14 @@ import {
   Settings,
   Loader
 } from 'lucide-react';
-import { toast } from 'sonner@2.0.3';
+import { toast } from 'sonner';
 import { companyAPI } from '../../lib/apiClient';
 
 interface Company {
   id: string;
   name: string;
   industry: string;
+  businessCategory: string;
   status: 'active' | 'suspended' | 'trial' | 'inactive';
   plan: 'free' | 'basic' | 'pro' | 'enterprise';
   registrationDate: string;
@@ -186,6 +187,7 @@ export function CompanyManagementClean() {
   const [companyForm, setCompanyForm] = useState({
     name: '',
     industry: '',
+    businessCategory: '',
     status: 'active' as const,
     plan: 'basic' as const,
     contactPerson: '',
@@ -194,7 +196,8 @@ export function CompanyManagementClean() {
     address: '',
     city: '',
     country: 'India',
-    expiryDate: '',
+    registrationDate: new Date().toISOString().split('T')[0],
+    expiryDate: new Date(Date.now() + 365*24*60*60*1000).toISOString().split('T')[0],
   });
 
   // Load companies on mount
@@ -210,6 +213,7 @@ export function CompanyManagementClean() {
           id: comp.id,
           name: comp.name,
           industry: comp.industry || 'Technology',
+          businessCategory: comp.businessCategory || 'General',
           status: comp.status || 'active',
           plan: (comp.companySize || 'basic').toLowerCase() as any,
           registrationDate: comp.createdAt?.split('T')[0] || new Date().toISOString().split('T')[0],
@@ -247,6 +251,7 @@ export function CompanyManagementClean() {
     setCompanyForm({
       name: '',
       industry: '',
+      businessCategory: '',
       status: 'active',
       plan: 'basic',
       contactPerson: '',
@@ -255,7 +260,8 @@ export function CompanyManagementClean() {
       address: '',
       city: '',
       country: 'India',
-      expiryDate: '',
+      registrationDate: new Date().toISOString().split('T')[0],
+      expiryDate: new Date(Date.now() + 365*24*60*60*1000).toISOString().split('T')[0],
     });
   };
 
@@ -269,13 +275,22 @@ export function CompanyManagementClean() {
     try {
       setIsSaving(true);
       
+      // Map plan to valid companySize enum value
+      const planToSize: Record<string, string> = {
+        'free': '1-10',
+        'basic': '11-50',
+        'pro': '51-200',
+        'enterprise': '201-500'
+      };
+      
       // Prepare data for backend
       const createData = {
         name: companyForm.name,
         email: companyForm.email,
         phone: companyForm.phone,
         industry: companyForm.industry,
-        companySize: companyForm.plan || 'basic',
+        businessCategory: companyForm.businessCategory,
+        companySize: planToSize[companyForm.plan] || '11-50',
         street: companyForm.address,
         city: companyForm.city,
         country: companyForm.country,
@@ -290,10 +305,11 @@ export function CompanyManagementClean() {
           id: response.data.id,
           name: response.data.name,
           industry: response.data.industry,
+          businessCategory: companyForm.businessCategory,
           status: response.data.status,
           plan: companyForm.plan,
-          registrationDate: new Date().toISOString().split('T')[0],
-          expiryDate: companyForm.expiryDate || new Date(Date.now() + 365*24*60*60*1000).toISOString().split('T')[0],
+          registrationDate: companyForm.registrationDate,
+          expiryDate: companyForm.expiryDate,
           contactPerson: companyForm.contactPerson || 'Admin',
           email: response.data.email,
           phone: response.data.phone,
@@ -329,6 +345,7 @@ export function CompanyManagementClean() {
     setCompanyForm({
       name: company.name,
       industry: company.industry,
+      businessCategory: company.businessCategory,
       status: company.status,
       plan: company.plan,
       contactPerson: company.contactPerson,
@@ -337,6 +354,7 @@ export function CompanyManagementClean() {
       address: company.address,
       city: company.city,
       country: company.country,
+      registrationDate: company.registrationDate,
       expiryDate: company.expiryDate,
     });
     setShowEditDialog(true);
@@ -359,6 +377,7 @@ export function CompanyManagementClean() {
         email: companyForm.email,
         phone: companyForm.phone,
         industry: companyForm.industry,
+        businessCategory: companyForm.businessCategory,
         companySize: companyForm.plan,
         street: companyForm.address,
         city: companyForm.city,
@@ -374,6 +393,7 @@ export function CompanyManagementClean() {
                 ...c,
                 name: companyForm.name,
                 industry: companyForm.industry,
+                businessCategory: companyForm.businessCategory,
                 status: companyForm.status,
                 plan: companyForm.plan,
                 contactPerson: companyForm.contactPerson,
@@ -382,6 +402,7 @@ export function CompanyManagementClean() {
                 address: companyForm.address,
                 city: companyForm.city,
                 country: companyForm.country,
+                registrationDate: companyForm.registrationDate,
                 expiryDate: companyForm.expiryDate,
               }
             : c
@@ -832,7 +853,7 @@ export function CompanyManagementClean() {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
               <div>
                 <Label htmlFor="plan">Plan *</Label>
                 <select
@@ -859,6 +880,30 @@ export function CompanyManagementClean() {
                   <option value="trial">Trial</option>
                   <option value="suspended">Suspended</option>
                   <option value="inactive">Inactive</option>
+                </select>
+              </div>
+              <div>
+                <Label htmlFor="business-category">Business Category *</Label>
+                <select
+                  id="business-category"
+                  value={companyForm.businessCategory}
+                  onChange={(e) => setCompanyForm({ ...companyForm, businessCategory: e.target.value })}
+                  className="mt-2 w-full px-4 py-2 border border-gray-200 rounded-lg bg-white text-sm"
+                >
+                  <option value="">Select Category</option>
+                  <option value="Retail">Retail</option>
+                  <option value="Technology">Technology</option>
+                  <option value="Finance">Finance</option>
+                  <option value="Healthcare">Healthcare</option>
+                  <option value="Manufacturing">Manufacturing</option>
+                  <option value="Logistics">Logistics</option>
+                  <option value="Food & Beverage">Food & Beverage</option>
+                  <option value="Education">Education</option>
+                  <option value="Real Estate">Real Estate</option>
+                  <option value="E-commerce">E-commerce</option>
+                  <option value="Hospitality">Hospitality</option>
+                  <option value="Travel">Travel</option>
+                  <option value="Other">Other</option>
                 </select>
               </div>
             </div>
@@ -899,6 +944,29 @@ export function CompanyManagementClean() {
                 />
               </div>
               <div>
+                <Label htmlFor="country">Country</Label>
+                <Input
+                  id="country"
+                  value={companyForm.country}
+                  onChange={(e) => setCompanyForm({ ...companyForm, country: e.target.value })}
+                  className="mt-2"
+                  placeholder="India"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="industry">Industry</Label>
+                <Input
+                  id="industry"
+                  value={companyForm.industry}
+                  onChange={(e) => setCompanyForm({ ...companyForm, industry: e.target.value })}
+                  className="mt-2"
+                  placeholder="e.g., Technology, Retail"
+                />
+              </div>
+              <div>
                 <Label htmlFor="city">City</Label>
                 <Input
                   id="city"
@@ -907,6 +975,35 @@ export function CompanyManagementClean() {
                   className="mt-2"
                   placeholder="Bangalore"
                 />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <Label htmlFor="reg-date">Registration Date *</Label>
+                <div className="relative mt-2">
+                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
+                  <input
+                    id="reg-date"
+                    type="date"
+                    value={companyForm.registrationDate}
+                    onChange={(e) => setCompanyForm({ ...companyForm, registrationDate: e.target.value })}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg bg-white text-sm"
+                  />
+                </div>
+              </div>
+              <div>
+                <Label htmlFor="exp-date">Expiry Date *</Label>
+                <div className="relative mt-2">
+                  <Calendar className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-500 pointer-events-none" />
+                  <input
+                    id="exp-date"
+                    type="date"
+                    value={companyForm.expiryDate}
+                    onChange={(e) => setCompanyForm({ ...companyForm, expiryDate: e.target.value })}
+                    className="w-full pl-10 pr-4 py-2 border border-gray-200 rounded-lg bg-white text-sm"
+                  />
+                </div>
               </div>
             </div>
 

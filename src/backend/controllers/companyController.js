@@ -9,20 +9,21 @@ const { logger } = require('../utils/logger');
 exports.createCompany = async (req, res, next) => {
   try {
     const { Company } = getModels();
-    const { name, email, phone, industry, companySize, street, city, state, pincode, country } = req.body;
+    const { name, email, phone, industry, businessCategory, companySize, street, city, state, pincode, country, status } = req.body;
     
     const company = await Company.create({
       name,
       email,
       phone,
       industry,
+      businessCategory,
       companySize,
       street,
       city,
       state,
       pincode,
       country,
-      status: 'active'
+      status: status || 'active'
     });
     
     res.status(201).json({

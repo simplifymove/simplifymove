@@ -1,0 +1,53 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Frontend Debug</title>
+    <style>
+        body { font-family: monospace; padding: 20px; background: #f0f0f0; }
+        .status { padding: 10px; margin: 10px 0; border: 1px solid #ccc; background: white; }
+        .success { background: #d4edda; }
+        .error { background: #f8d7da; }
+        .pending { background: #e2e3e5; }
+    </style>
+</head>
+<body>
+    <h1>Frontend Debug Status</h1>
+    <div id="status"></div>
+    <iframe id="app" src="/" style="width: 100%; height: 600px; border: 1px solid red; margin-top: 20px;"></iframe>
+    
+    <script>
+        function updateStatus() {
+            const iframe = document.getElementById('app').contentWindow;
+            let status = '<div class="status pending">';
+            
+            try {
+                if (iframe.frontendLoaded) {
+                    status += '<strong>✅ Frontend loaded</strong><br>';
+                } else {
+                    status += '<strong>❌ Frontend not loaded</strong><br>';
+                }
+                
+                if (iframe.renderStatus) {
+                    const rsClass = iframe.renderStatus.includes('success') ? 'success' : 
+                                   iframe.renderStatus.includes('error') ? 'error' : 'pending';
+                    status = status.replace('class="status pending"', `class="status ${rsClass}"`);
+                    status += `<strong>Render Status:</strong> ${iframe.renderStatus}<br>`;
+                }
+                
+                status += '<br><strong>window.renderStatus:</strong> ' + (iframe.renderStatus || 'undefined');
+                status += '<br><strong>window.frontendLoaded:</strong> ' + (iframe.frontendLoaded || 'undefined');
+                
+            } catch (e) {
+                status += '<strong>Cannot access iframe (same-origin policy):</strong> ' + e.message + '<br>';
+            }
+            
+            status += '</div>';
+            document.getElementById('status').innerHTML = status;
+        }
+        
+        // Check status every second
+        setInterval(updateStatus, 1000);
+        updateStatus();
+    </script>
+</body>
+</html>

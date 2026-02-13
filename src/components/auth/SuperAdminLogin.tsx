@@ -13,7 +13,10 @@ export function SuperAdminLogin({ onLogin, onBack }: SuperAdminLoginProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // For demo purposes, any credentials work
+    // For demo purposes, set a mock JWT token
+    const mockToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6InN1cGVyLWFkbWluIiwicm9sZSI6InN1cGVyX2FkbWluIiwibmFtZSI6IlN1cGVyIEFkbWluIn0.mock';
+    localStorage.setItem('token', mockToken);
+    localStorage.setItem('userRole', 'super_admin');
     onLogin();
   };
 

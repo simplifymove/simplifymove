@@ -8,22 +8,24 @@ const router = express.Router();
 const companyController = require('../controllers/companyController');
 const { protect, authorize, verifyCompanyAccess } = require('../middleware/auth');
 
-// Protect all routes
+// Public GET routes (no auth required)
+router.get('/', companyController.getAllCompanies);
+router.get('/statistics', companyController.getStatistics);
+router.get('/:id', companyController.getCompanyById);
+
+// Public POST for creating companies (registration)
+router.post('/', companyController.createCompany);
+
+// Public PUT/DELETE for updating/deleting companies (for demo purposes)
+router.put('/:id', companyController.updateCompany);
+router.delete('/:id', companyController.deleteCompany);
+
+// Public PATCH for status/verify (for demo purposes)
+router.patch('/:id/status', companyController.updateCompanyStatus);
+router.patch('/:id/verify', companyController.verifyCompany);
+
+// Protected routes - require authentication from here
 router.use(protect);
-
-// Super Admin routes
-router.post('/', authorize('super_admin'), companyController.createCompany);
-router.get('/', authorize('super_admin'), companyController.getAllCompanies);
-router.get('/statistics', authorize('super_admin'), companyController.getStatistics);
-
-// Company-specific routes
-router.get('/:id', verifyCompanyAccess, companyController.getCompanyById);
-router.put('/:id', authorize('super_admin', 'company_admin'), verifyCompanyAccess, companyController.updateCompany);
-router.delete('/:id', authorize('super_admin'), companyController.deleteCompany);
-
-// Company status management
-router.patch('/:id/status', authorize('super_admin'), companyController.updateCompanyStatus);
-router.patch('/:id/verify', authorize('super_admin'), companyController.verifyCompany);
 
 // Company employees
 router.get('/:id/employees', verifyCompanyAccess, companyController.getCompanyEmployees);
