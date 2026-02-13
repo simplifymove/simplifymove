@@ -36,10 +36,14 @@ const courierRoutes = require('./routes/courierRoutes');
 const notificationRoutes = require('./routes/notificationRoutes');
 const employeeRoutes = require('./routes/employeeRoutes');
 const companyAdminRoutes = require('./routes/companyAdminRoutes');
+const auditLogRoutes = require('./routes/auditLogRoutes');
+const vendorRoutes = require('./routes/vendorRoutes');
+const emailConfigRoutes = require('./routes/emailConfigRoutes');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
 const { logger } = require('./utils/logger');
+const { captureAuditInfo, logAuditAction } = require('./middleware/auditLogger');
 
 // Import socket handlers
 const socketHandler = require('./socket/socketHandler');
@@ -83,6 +87,10 @@ app.use(express.urlencoded({ extended: true, limit: '10mb' }));
 // Compression Middleware
 app.use(compression());
 
+// Audit Logging Middleware
+app.use(captureAuditInfo);
+app.use(logAuditAction);
+
 // Logging Middleware
 if (process.env.NODE_ENV === 'development') {
   app.use(morgan('dev'));
@@ -114,6 +122,9 @@ app.use(`/api/${API_VERSION}/couriers`, courierRoutes);
 app.use(`/api/${API_VERSION}/notifications`, notificationRoutes);
 app.use(`/api/${API_VERSION}/employees`, employeeRoutes);
 app.use(`/api/${API_VERSION}/companyAdmins`, companyAdminRoutes);
+app.use(`/api/${API_VERSION}/audit-logs`, auditLogRoutes);
+app.use(`/api/${API_VERSION}/vendors`, vendorRoutes);
+app.use(`/api/${API_VERSION}/email-config`, emailConfigRoutes);
 
 // Health Check Route
 app.get('/health', (req, res) => {

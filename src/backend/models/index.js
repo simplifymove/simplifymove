@@ -151,6 +151,70 @@ const initializeModels = (sequelizeInstance) => {
     status: { type: DataTypes.ENUM('active', 'inactive', 'expired'), defaultValue: 'active' }
   }, { timestamps: true, tableName: 'promotional_campaigns' });
 
+  // AuditLog Model
+  const AuditLog = instanceToUse.define('AuditLog', {
+    id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+    action: { type: DataTypes.STRING(100), allowNull: false },
+    category: { type: DataTypes.ENUM('company', 'user', 'booking', 'payment', 'subscription', 'billing', 'system', 'vendor', 'email'), allowNull: false },
+    performedBy: { type: DataTypes.UUID },
+    performedByRole: { type: DataTypes.STRING(50) },
+    companyId: { type: DataTypes.UUID },
+    targetEntity: { type: DataTypes.STRING(100) },
+    targetId: { type: DataTypes.STRING(100) },
+    details: { type: DataTypes.TEXT },
+    changes: { type: DataTypes.JSON, defaultValue: [] },
+    ipAddress: { type: DataTypes.STRING(45) },
+    userAgent: { type: DataTypes.STRING(500) },
+    status: { type: DataTypes.ENUM('success', 'failure'), defaultValue: 'success' },
+    severity: { type: DataTypes.ENUM('low', 'medium', 'high', 'critical'), defaultValue: 'medium' }
+  }, { timestamps: true, tableName: 'audit_logs' });
+
+  // Vendor Model
+  const Vendor = instanceToUse.define('Vendor', {
+    id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+    name: { type: DataTypes.STRING(100), allowNull: false, unique: true },
+    category: { type: DataTypes.ENUM('payment', 'travel', 'logistics', 'communication', 'analytics', 'other'), allowNull: false },
+    description: { type: DataTypes.TEXT },
+    status: { type: DataTypes.ENUM('active', 'inactive', 'testing'), defaultValue: 'active' },
+    apiEndpoint: { type: DataTypes.STRING(255) },
+    apiKey: { type: DataTypes.STRING(500) },
+    webhookUrl: { type: DataTypes.STRING(255) },
+    connectedCompanies: { type: DataTypes.INTEGER, defaultValue: 0 },
+    healthStatus: { type: DataTypes.ENUM('healthy', 'degraded', 'down'), defaultValue: 'healthy' },
+    requestsToday: { type: DataTypes.INTEGER, defaultValue: 0 },
+    uptime: { type: DataTypes.DECIMAL(5, 2), defaultValue: 100 },
+    lastSync: { type: DataTypes.DATE }
+  }, { timestamps: true, tableName: 'vendors' });
+
+  // Email Config Model
+  const EmailConfig = instanceToUse.define('EmailConfig', {
+    id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },
+    configName: { type: DataTypes.STRING(255), unique: true, allowNull: false },
+    provider: { type: DataTypes.ENUM('smtp', 'sendgrid', 'mailgun', 'aws_ses', 'custom'), defaultValue: 'smtp' },
+    smtpHost: { type: DataTypes.STRING(255) },
+    smtpPort: { type: DataTypes.INTEGER },
+    smtpUsername: { type: DataTypes.STRING(255) },
+    smtpPassword: { type: DataTypes.TEXT },
+    apiKey: { type: DataTypes.TEXT },
+    fromEmail: { type: DataTypes.STRING(255), allowNull: false },
+    fromName: { type: DataTypes.STRING(255) },
+    replyTo: { type: DataTypes.STRING(255) },
+    isDefault: { type: DataTypes.BOOLEAN, defaultValue: false },
+    isActive: { type: DataTypes.BOOLEAN, defaultValue: true },
+    useTLS: { type: DataTypes.BOOLEAN, defaultValue: true },
+    useSSL: { type: DataTypes.BOOLEAN, defaultValue: false },
+    testEmailAddress: { type: DataTypes.STRING(255) },
+    lastTestedAt: { type: DataTypes.DATE },
+    testStatus: { type: DataTypes.ENUM('not_tested', 'success', 'failed'), defaultValue: 'not_tested' },
+    testError: { type: DataTypes.TEXT },
+    companyId: { type: DataTypes.UUID },
+    additionalConfig: { type: DataTypes.JSON },
+    rateLimit: { type: DataTypes.INTEGER, defaultValue: 100 },
+    rateLimitPeriod: { type: DataTypes.INTEGER, defaultValue: 60 },
+    emailsSentToday: { type: DataTypes.INTEGER, defaultValue: 0 },
+    emailsSentThisMonth: { type: DataTypes.INTEGER, defaultValue: 0 }
+  }, { timestamps: true, tableName: 'email_configs' });
+
   // Associations
   User.hasMany(Booking, { foreignKey: 'userId' });
   Booking.belongsTo(User, { foreignKey: 'userId' });
@@ -161,7 +225,7 @@ const initializeModels = (sequelizeInstance) => {
   Wallet.hasMany(WalletTransaction, { foreignKey: 'walletId' });
   WalletTransaction.belongsTo(Wallet, { foreignKey: 'walletId' });
 
-  const models = { User, Company, Booking, Wallet, WalletTransaction, Notification, PromotionalCampaign };
+  const models = { User, Company, Booking, Wallet, WalletTransaction, Notification, PromotionalCampaign, AuditLog, Vendor, EmailConfig };
   registry.models = models;
   registry.initialized = true;
 
