@@ -4,13 +4,11 @@
  */
 
 const express = require('express');
-const mongoose = require('mongoose');
 const dotenv = require('dotenv');
 const cors = require('cors');
 const helmet = require('helmet');
 const compression = require('compression');
 const morgan = require('morgan');
-const mongoSanitize = require('express-mongo-sanitize');
 const xss = require('xss-clean');
 const rateLimit = require('express-rate-limit');
 const http = require('http');
@@ -18,6 +16,10 @@ const socketIO = require('socket.io');
 
 // Load environment variables
 dotenv.config();
+
+// Import Sequelize database and models
+const sequelize = require('./config/database');
+const { initializeModels } = require('./models');
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
@@ -36,7 +38,7 @@ const employeeRoutes = require('./routes/employeeRoutes');
 const companyAdminRoutes = require('./routes/companyAdminRoutes');
 
 // Import middleware
-const errorHandler = require('./middleware/errorHandler');
+const { errorHandler } = require('./middleware/errorHandler');
 const { logger } = require('./utils/logger');
 
 // Import socket handlers
@@ -55,7 +57,6 @@ const io = socketIO(server, {
 
 // Security Middleware
 app.use(helmet()); // Set security headers
-app.use(mongoSanitize()); // Prevent NoSQL injection
 app.use(xss()); // Prevent XSS attacks
 
 // CORS Configuration
@@ -150,20 +151,18 @@ app.use(errorHandler);
 // Database Connection
 const connectDB = async () => {
   try {
-    const mongoURI = process.env.NODE_ENV === 'production' 
-      ? process.env.MONGODB_URI_PROD 
-      : process.env.MONGODB_URI;
-
-    await mongoose.connect(mongoURI, {
-      useNewUrlParser: true,
-      useUnifiedTopology: true,
-    });
-
-    logger.info('MongoDB connected successfully');
-    console.log('✅ MongoDB connected successfully');
+    // Test Sequelize connection to MySQL database
+    await sequelize.authenticate();
+    logger.info('MySQL connection successful');
+    console.log('✅ MySQL connection successful');
+    
+    // Skip sync since database already exists with sample data
+    // and schema matches the existing tables
+    logger.info('Using existing database schema');
+    console.log('✅ Using existing database schema');
   } catch (error) {
-    logger.error('MongoDB connection error:', error);
-    console.error('❌ MongoDB connection error:', error.message);
+    logger.error('MySQL connection error:', error);
+    console.error('❌ MySQL connection error:', error.message);
     process.exit(1);
   }
 };
@@ -205,11 +204,10 @@ process.on('uncaughtException', (err) => {
 process.on('SIGTERM', () => {
   logger.info('SIGTERM received, shutting down gracefully');
   console.log('👋 SIGTERM received, shutting down gracefully');
-  server.close(() => {
-    mongoose.connection.close(false, () => {
-      console.log('✅ Server and database connections closed');
-      process.exit(0);
-    });
+  server.close(async () => {
+    await sequelize.close();
+    console.log('✅ Server and database connections closed');
+    process.exit(0);
   });
 });
 

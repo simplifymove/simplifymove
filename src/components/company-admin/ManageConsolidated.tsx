@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Card } from '../ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { WalletManagementAdmin } from './WalletManagementAdmin';
-import { PolicyBudget } from './PolicyBudget';
+import { PolicyBudget } from '../admin/PolicyBudget';
 import { CourierManagementClean } from './CourierManagementClean';
 import { Users, Wallet, Shield, Package } from 'lucide-react';
 
