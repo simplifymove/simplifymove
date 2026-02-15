@@ -9,6 +9,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { AppError } = require('../middleware/errorHandler');
 const { logger } = require('../utils/logger');
+const { logCompanyAction, getChanges } = require('../utils/auditLog');
 
 exports.createCompany = async (req, res, next) => {
   try {
@@ -51,6 +52,26 @@ exports.createCompany = async (req, res, next) => {
       pincode,
       country,
       status: status || 'active'
+    });
+
+    // Log audit trail for company creation
+    await logCompanyAction({
+      action: 'Company Created',
+      performedBy: req.user?.id || 'system',
+      performedByRole: req.user?.role || 'system',
+      targetId: company.id,
+      details: `New company "${name}" created with email ${email}`,
+      changes: [
+        { field: 'Name', oldValue: '-', newValue: name },
+        { field: 'Email', oldValue: '-', newValue: email },
+        { field: 'Industry', oldValue: '-', newValue: industry || '-' },
+        { field: 'Company Size', oldValue: '-', newValue: companySize || '-' },
+        { field: 'Status', oldValue: '-', newValue: status || 'active' }
+      ],
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('user-agent'),
+      status: 'success',
+      severity: 'medium'
     });
 
     // Create company admin user and send invitation email when contactEmail provided
@@ -179,7 +200,27 @@ exports.updateCompany = async (req, res, next) => {
       return res.status(400).json({ success: false, message: `Invalid companySize. Allowed values: ${allowedCompanySizes.join(', ')}` });
     }
 
+    // Capture old data for audit trail
+    const oldData = company.toJSON();
+    
     await company.update(req.body);
+
+    // Log audit trail for company update
+    const changes = getChanges(oldData, company.toJSON());
+    if (changes.length > 0) {
+      await logCompanyAction({
+        action: 'Company Updated',
+        performedBy: req.user?.id || 'system',
+        performedByRole: req.user?.role || 'system',
+        targetId: company.id,
+        details: `Company "${company.name}" updated with ${changes.length} field(s)`,
+        changes,
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.get('user-agent'),
+        status: 'success',
+        severity: 'medium'
+      });
+    }
     
     res.json({
       success: true,
@@ -200,8 +241,27 @@ exports.deleteCompany = async (req, res, next) => {
     if (!company) {
       return res.status(404).json({ success: false, message: 'Company not found' });
     }
+
+    const companyName = company.name;
+    const companyId = company.id;
     
     await company.destroy();
+
+    // Log audit trail for company deletion
+    await logCompanyAction({
+      action: 'Company Deleted',
+      performedBy: req.user?.id || 'system',
+      performedByRole: req.user?.role || 'system',
+      targetId: companyId,
+      details: `Company "${companyName}" has been deleted permanently`,
+      changes: [
+        { field: 'Status', oldValue: 'Active', newValue: 'Deleted' }
+      ],
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('user-agent'),
+      status: 'success',
+      severity: 'high'
+    });
     
     res.json({
       success: true,
@@ -222,8 +282,26 @@ exports.updateCompanyStatus = async (req, res, next) => {
     if (!company) {
       return res.status(404).json({ success: false, message: 'Company not found' });
     }
+
+    const oldStatus = company.status;
     
     await company.update({ status });
+
+    // Log audit trail for status change
+    await logCompanyAction({
+      action: `Company Status Changed to ${status}`,
+      performedBy: req.user?.id || 'system',
+      performedByRole: req.user?.role || 'system',
+      targetId: company.id,
+      details: `Company "${company.name}" status changed from ${oldStatus} to ${status}`,
+      changes: [
+        { field: 'Status', oldValue: oldStatus, newValue: status }
+      ],
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('user-agent'),
+      status: 'success',
+      severity: 'medium'
+    });
     
     res.json({
       success: true,
@@ -244,8 +322,27 @@ exports.verifyCompany = async (req, res, next) => {
     if (!company) {
       return res.status(404).json({ success: false, message: 'Company not found' });
     }
+
+    const wasVerified = company.emailVerified;
     
     await company.update({ status: 'active', emailVerified: true });
+
+    // Log audit trail for company verification
+    await logCompanyAction({
+      action: 'Company Verified',
+      performedBy: req.user?.id || 'system',
+      performedByRole: req.user?.role || 'system',
+      targetId: company.id,
+      details: `Company "${company.name}" has been verified and activated`,
+      changes: [
+        { field: 'Status', oldValue: company.previous('status'), newValue: 'active' },
+        { field: 'Email Verified', oldValue: String(wasVerified), newValue: 'true' }
+      ],
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('user-agent'),
+      status: 'success',
+      severity: 'medium'
+    });
     
     res.json({
       success: true,

@@ -7,6 +7,7 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { AppError } = require('../middleware/errorHandler');
 const { logger } = require('../utils/logger');
+const { createAuditLog } = require('../utils/auditLog');
 
 // Generate JWT Token
 const generateToken = (userId, role = 'super_admin') => {
@@ -33,6 +34,21 @@ exports.login = async (req, res, next) => {
     if (process.env.NODE_ENV === 'development') {
       const devToken = generateToken('super-admin-dev', role || 'super_admin');
       
+      // Log development login
+      await createAuditLog({
+        action: 'User Login',
+        category: 'system',
+        performedBy: 'super-admin-dev',
+        performedByRole: role || 'super_admin',
+        targetEntity: 'User',
+        targetId: 'super-admin-dev',
+        details: `Development user logged in with email: ${email}`,
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.get('user-agent'),
+        status: 'success',
+        severity: 'low'
+      });
+
       return res.status(200).json({
         success: true,
         message: 'Logged in successfully',
