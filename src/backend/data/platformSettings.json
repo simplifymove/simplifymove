@@ -1,0 +1,79 @@
+{
+  "general": {
+    "platformName": "SimplifyMove",
+    "supportEmail": "support@simplifymove.com",
+    "supportPhone": "+1234567890",
+    "timezone": "UTC",
+    "currency": "USD",
+    "currencySymbol": "$",
+    "dateFormat": "YYYY-MM-DD",
+    "maxFileSize": 10,
+    "sessionTimeout": 60,
+    "maintenanceMode": false
+  },
+  "email": {
+    "smtpHost": "smtp.gmail.com",
+    "smtpPort": 587,
+    "smtpUser": "raghavaboyidi@gmail.com",
+    "smtpPassword": "fhrh obkn yxah tecc",
+    "fromEmail": "raghavaboyidi@gmail.com",
+    "fromName": "SimplifyMove",
+    "enableSSL": false
+  },
+  "notifications": {
+    "emailNotifications": true,
+    "smsNotifications": true,
+    "pushNotifications": false,
+    "adminAlerts": true,
+    "bookingConfirmations": true,
+    "paymentAlerts": true
+  },
+  "security": {
+    "passwordMinLength": 8,
+    "passwordRequireUppercase": true,
+    "passwordRequireNumbers": true,
+    "passwordRequireSpecialChars": true,
+    "twoFactorRequired": false,
+    "maxLoginAttempts": 5,
+    "lockoutDuration": 30,
+    "sessionExpiry": 3600
+  },
+  "features": {
+    "travelBooking": true,
+    "logisticsBooking": true,
+    "courierServices": true,
+    "walletManagement": true,
+    "expenseManagement": true,
+    "approvalWorkflow": true,
+    "analytics": true,
+    "apiAccess": true,
+    "customIntegrations": false,
+    "bulkBooking": true
+  },
+  "booking": {
+    "autoApprovalThreshold": 1000,
+    "cancellationWindow": 24,
+    "advanceBookingDays": 30,
+    "maxBookingsPerDay": 100,
+    "requireApproval": true,
+    "allowCancellation": true
+  },
+  "payment": {
+    "razorpayEnabled": true,
+    "stripeEnabled": true,
+    "paypalEnabled": true,
+    "codEnabled": true,
+    "walletEnabled": true,
+    "minWalletBalance": 100,
+    "maxWalletBalance": 10000,
+    "autoRefund": true
+  },
+  "limits": {
+    "maxCompanies": 100,
+    "maxUsersPerCompany": 500,
+    "maxBookingsPerMonth": 10000,
+    "apiRateLimit": 1000,
+    "maxFileUploads": 100,
+    "storagePerCompany": 1000
+  }
+}

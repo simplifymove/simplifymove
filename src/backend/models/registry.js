@@ -9,7 +9,10 @@ const registry = {
   Wallet: null,
   WalletTransaction: null,
   Notification: null,
-  PromotionalCampaign: null
+  PromotionalCampaign: null,
+  AuditLog: null,
+  Vendor: null,
+  EmailConfig: null
 };
 
 const getModel = (modelName) => {

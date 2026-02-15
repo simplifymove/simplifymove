@@ -155,6 +155,14 @@ export const emailConfigAPI = {
     apiCall(`/email-config/${id}/stats`, 'PATCH', { emailsSent }),
 };
 
+// ==================== ADMIN / PLATFORM APIs ====================
+export const adminAPI = {
+  // Get global platform settings (super-admin)
+  getSettings: () => apiCall('/admin/settings'),
+  // Update global platform settings
+  updateSettings: (data: any) => apiCall('/admin/settings', 'PUT', data)
+};
+
 // ==================== USER APIs ====================
 export const userAPI = {
   // Get all users

@@ -3,14 +3,41 @@
  */
 
 const { getModels } = require('../models');
+const nodemailer = require('nodemailer');
+const fs = require('fs');
+const path = require('path');
+const crypto = require('crypto');
 const { AppError } = require('../middleware/errorHandler');
 const { logger } = require('../utils/logger');
 
 exports.createCompany = async (req, res, next) => {
   try {
-    const { Company } = getModels();
-    const { name, email, phone, industry, businessCategory, companySize, street, city, state, pincode, country, status } = req.body;
-    
+    const { Company, User } = getModels();
+    const {
+      name,
+      email,
+      phone,
+      industry,
+      businessCategory,
+      companySize,
+      street,
+      city,
+      state,
+      pincode,
+      country,
+      status,
+      contactName,
+      contactEmail,
+      contactPhone,
+      contactDesignation
+    } = req.body;
+
+    const allowedCompanySizes = ['1-10','11-50','51-200','201-500','501-1000','1000+'];
+
+    if (companySize && !allowedCompanySizes.includes(companySize)) {
+      return res.status(400).json({ success: false, message: `Invalid companySize. Allowed values: ${allowedCompanySizes.join(', ')}` });
+    }
+
     const company = await Company.create({
       name,
       email,
@@ -25,7 +52,73 @@ exports.createCompany = async (req, res, next) => {
       country,
       status: status || 'active'
     });
-    
+
+    // Create company admin user and send invitation email when contactEmail provided
+    if (contactEmail) {
+      const password = crypto.randomBytes(6).toString('base64');
+
+      try {
+        await User.create({
+          name: contactName || 'Company Admin',
+          email: contactEmail,
+          phone: contactPhone || '',
+          password,
+          role: 'company_admin',
+          companyId: company.id,
+          designation: contactDesignation || '',
+          status: 'active',
+          emailVerified: false
+        });
+      } catch (err) {
+        logger.error('Failed to create company admin user:', err);
+      }
+
+      // attempt to send invitation using platform settings (non-blocking)
+      try {
+        console.log('[EMAIL] Attempting to send invitation email for contactEmail:', contactEmail);
+        const SETTINGS_FILE = path.join(__dirname, '..', 'data', 'platformSettings.json');
+        let platformSettings = {};
+        if (fs.existsSync(SETTINGS_FILE)) {
+          platformSettings = JSON.parse(fs.readFileSync(SETTINGS_FILE, 'utf8') || '{}');
+        }
+        console.log('[EMAIL] Platform settings email config:', JSON.stringify(platformSettings.email, null, 2));
+
+        const emailCfg = platformSettings.email || {};
+        if (emailCfg && (emailCfg.smtpHost || emailCfg.fromEmail)) {
+          console.log('[EMAIL] Creating transporter for', emailCfg.smtpHost, 'port', emailCfg.smtpPort, 'secure:', emailCfg.enableSSL);
+          const transporter = nodemailer.createTransport({
+            host: emailCfg.smtpHost || 'localhost',
+            port: emailCfg.smtpPort || 587,
+            secure: emailCfg.enableSSL ? true : false,
+            auth: emailCfg.smtpUser ? { user: emailCfg.smtpUser, pass: emailCfg.smtpPassword } : undefined,
+            tls: { rejectUnauthorized: false }
+          });
+
+          const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3000';
+          const loginUrl = `${frontendUrl}/login`;
+
+          const mailOptions = {
+            from: `${emailCfg.fromName || 'SimplifyMove'} <${emailCfg.fromEmail || 'noreply@simplifymove.com'}>`,
+            to: contactEmail,
+            subject: 'Your SimplifyMove Company Admin account',
+            text: `Hello ${contactName || ''},\n\nAn admin account has been created for your company on SimplifyMove.\n\nLogin URL: ${loginUrl}\nEmail: ${contactEmail}\nPassword: ${password}\n\nPlease change your password after first login.`,
+            html: `<p>Hello ${contactName || ''},</p><p>An admin account has been created for your company on SimplifyMove.</p><p><strong>Login URL:</strong> <a href="${loginUrl}">${loginUrl}</a><br/><strong>Email:</strong> ${contactEmail}<br/><strong>Password:</strong> ${password}</p><p>Please change your password after first login.</p>`
+          };
+          console.log('[EMAIL] Sending mail to:', contactEmail);
+
+          const info = await transporter.sendMail(mailOptions);
+          console.log('[EMAIL] ✅ Invitation email sent successfully. MessageID:', info.messageId);
+          logger.info('Invitation email sent to', contactEmail);
+        } else {
+          console.log('[EMAIL] ⚠️ Email settings not configured - smtpHost:', emailCfg.smtpHost, 'fromEmail:', emailCfg.fromEmail);
+          logger.info('Platform email settings not configured - skipping invitation email');
+        }
+      } catch (err) {
+        console.error('[EMAIL] ❌ Failed to send invitation email:', err.message);
+        logger.error('Failed to send invitation email:', err);
+      }
+    }
+
     res.status(201).json({
       success: true,
       message: 'Company created successfully',
@@ -81,6 +174,11 @@ exports.updateCompany = async (req, res, next) => {
       return res.status(404).json({ success: false, message: 'Company not found' });
     }
     
+    const allowedCompanySizes = ['1-10','11-50','51-200','201-500','501-1000','1000+'];
+    if (req.body.companySize && !allowedCompanySizes.includes(req.body.companySize)) {
+      return res.status(400).json({ success: false, message: `Invalid companySize. Allowed values: ${allowedCompanySizes.join(', ')}` });
+    }
+
     await company.update(req.body);
     
     res.json({

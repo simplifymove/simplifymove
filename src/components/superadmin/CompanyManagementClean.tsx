@@ -372,13 +372,21 @@ export function CompanyManagementClean() {
     try {
       setIsSaving(true);
       
+      // Map plan to valid companySize enum value before sending to backend
+      const planToSize: Record<string, string> = {
+        'free': '1-10',
+        'basic': '11-50',
+        'pro': '51-200',
+        'enterprise': '201-500'
+      };
+
       const updateData = {
         name: companyForm.name,
         email: companyForm.email,
         phone: companyForm.phone,
         industry: companyForm.industry,
         businessCategory: companyForm.businessCategory,
-        companySize: companyForm.plan,
+        companySize: planToSize[companyForm.plan] || '11-50',
         street: companyForm.address,
         city: companyForm.city,
         country: companyForm.country,

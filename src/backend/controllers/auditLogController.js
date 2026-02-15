@@ -1,4 +1,4 @@
-const { getModels } = require('../models/registry');
+const { getModels } = require('../models');
 const { Op } = require('sequelize');
 
 // Create audit log entry

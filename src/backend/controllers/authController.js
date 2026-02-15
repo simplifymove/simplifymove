@@ -1,14 +1,23 @@
 /**
- * Authentication Controller (Stub)
- * Implement full authentication logic based on your requirements
+ * Authentication Controller
+ * Handles user registration, login, and token management
  */
 
+const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const { AppError } = require('../middleware/errorHandler');
 const { logger } = require('../utils/logger');
 
-// TODO: Implement these functions with full JWT logic, email verification, etc.
+// Generate JWT Token
+const generateToken = (userId, role = 'super_admin') => {
+  return jwt.sign(
+    { id: userId, role },
+    process.env.JWT_SECRET || 'your-secret-key-change-in-production',
+    { expiresIn: '7d' }
+  );
+};
 
+// Development/Demo Login
 exports.register = async (req, res, next) => {
   res.status(501).json({
     success: false,
@@ -17,10 +26,63 @@ exports.register = async (req, res, next) => {
 };
 
 exports.login = async (req, res, next) => {
-  res.status(501).json({
-    success: false,
-    message: 'Login endpoint - To be implemented'
-  });
+  try {
+    const { email, password, role } = req.body;
+
+    // Development mode: Allow demo login without database
+    if (process.env.NODE_ENV === 'development') {
+      const devToken = generateToken('super-admin-dev', role || 'super_admin');
+      
+      return res.status(200).json({
+        success: true,
+        message: 'Logged in successfully',
+        data: {
+          id: 'super-admin-dev',
+          email: email || 'admin@simplifymove.com',
+          name: 'Super Admin',
+          role: role || 'super_admin',
+          token: devToken
+        },
+        token: devToken
+      });
+    }
+
+    // Production mode: Full authentication
+    if (!email || !password) {
+      return next(new AppError('Please provide email and password', 400));
+    }
+
+    const user = await User.findOne({ where: { email } })
+      .select('+password');
+
+    if (!user) {
+      return next(new AppError('Invalid email or password', 401));
+    }
+
+    const isPasswordCorrect = await user.matchPassword(password);
+
+    if (!isPasswordCorrect) {
+      return next(new AppError('Invalid email or password', 401));
+    }
+
+    const token = generateToken(user.id, user.role);
+
+    res.status(200).json({
+      success: true,
+      message: 'Logged in successfully',
+      data: {
+        id: user.id,
+        email: user.email,
+        name: user.name,
+        role: user.role,
+        token
+      },
+      token
+    });
+  } catch (error) {
+    logger.error('Login error:', error);
+    next(error);
+  }
 };
 
 exports.logout = async (req, res, next) => {

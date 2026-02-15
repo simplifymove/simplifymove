@@ -1,4 +1,4 @@
-const { getModels } = require('../models/registry');
+const { getModels } = require('../models');
 
 // Middleware to capture request information for audit logging
 const captureAuditInfo = (req, res, next) => {

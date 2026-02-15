@@ -26,6 +26,7 @@ import {
   Clock
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
+import { adminAPI } from '../../lib/apiClient';
 
 interface SystemConfig {
   general: {
@@ -44,6 +45,7 @@ interface SystemConfig {
     smtpHost: string;
     smtpPort: number;
     smtpUser: string;
+    smtpPassword: string;
     fromEmail: string;
     fromName: string;
     enableSSL: boolean;
@@ -123,6 +125,7 @@ const defaultConfig: SystemConfig = {
     smtpHost: 'smtp.gmail.com',
     smtpPort: 587,
     smtpUser: 'noreply@simplifymove.com',
+    smtpPassword: '',
     fromEmail: 'noreply@simplifymove.com',
     fromName: 'SimplifyMove',
     enableSSL: true,
@@ -190,12 +193,39 @@ export function SystemConfigurationClean() {
   const [hasUnsavedChanges, setHasUnsavedChanges] = useState(false);
   const [activeTab, setActiveTab] = useState('general');
 
+  // Load platform settings from backend when available
+  const loadSettings = async () => {
+    try {
+      const res = await adminAPI.getSettings();
+      if (res && res.success && res.data) {
+        setConfig({ ...defaultConfig, ...res.data });
+      }
+    } catch (err: any) {
+      // keep defaults on error
+      console.error('Failed to load platform settings:', err.message || err);
+      toast.error('Could not load platform settings - using defaults');
+    }
+  };
+
+  // Load once on mount
+  useState(() => { loadSettings(); });
+
   // Handle save configuration
   const handleSaveConfig = () => {
-    toast.success('Configuration saved successfully!', {
-      description: 'All system settings have been updated',
-    });
-    setHasUnsavedChanges(false);
+    (async () => {
+      try {
+        const res = await adminAPI.updateSettings(config);
+        if (res && res.success) {
+          toast.success('Configuration saved successfully!', { description: 'All system settings have been updated' });
+          setHasUnsavedChanges(false);
+        } else {
+          throw new Error(res?.message || 'Save failed');
+        }
+      } catch (err: any) {
+        console.error('Error saving settings:', err.message || err);
+        toast.error('Failed to save settings');
+      }
+    })();
   };
 
   // Handle reset to defaults
@@ -444,6 +474,17 @@ export function SystemConfigurationClean() {
                     id="smtp-user"
                     value={config.email.smtpUser}
                     onChange={(e) => updateConfig('email', 'smtpUser', e.target.value)}
+                    className="mt-2"
+                  />
+                </div>
+
+                <div>
+                  <Label htmlFor="smtp-password">SMTP Password</Label>
+                  <Input
+                    id="smtp-password"
+                    type="password"
+                    value={config.email.smtpPassword}
+                    onChange={(e) => updateConfig('email', 'smtpPassword', e.target.value)}
                     className="mt-2"
                   />
                 </div>
