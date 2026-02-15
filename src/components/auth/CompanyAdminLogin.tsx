@@ -13,7 +13,12 @@ export function CompanyAdminLogin({ onLogin, onBack }: CompanyAdminLoginProps) {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    // For demo purposes, any credentials work
+    // For demo purposes, set a mock JWT token for company admin with company ID
+    const mockToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImNvbXBhbnktYWRtaW4iLCJyb2xlIjoiY29tcGFueV9hZG1pbiIsIm5hbWUiOiJDb21wYW55IEFkbWluIiwiY29tcGFueSI6IjYzOTEzNDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIn0.mock';
+    localStorage.setItem('token', mockToken);
+    localStorage.setItem('userRole', 'company_admin');
+    localStorage.setItem('userEmail', email);
+    localStorage.setItem('companyId', '639134000000000000000000');
     onLogin();
   };
 

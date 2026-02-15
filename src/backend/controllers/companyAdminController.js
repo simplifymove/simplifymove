@@ -3,13 +3,10 @@
  * Handles company admin portal features
  */
 
-const Company = require('../models/Company');
-const User = require('../models/User');
-const Booking = require('../models/Booking');
-const Wallet = require('../models/Wallet');
-const Notification = require('../models/Notification');
+const { getModels } = require('../models');
 const { AppError } = require('../middleware/errorHandler');
 const { logger } = require('../utils/logger');
+const { createAuditLog, getChanges } = require('../utils/auditLog');
 
 /**
  * @desc    Get company admin dashboard
@@ -18,10 +15,11 @@ const { logger } = require('../utils/logger');
  */
 exports.getDashboard = async (req, res, next) => {
   try {
+    const { Company, User, Booking } = getModels();
     const companyId = req.user.company;
 
     // Get company details
-    const company = await Company.findById(companyId);
+    const company = await Company.findByPk(companyId);
 
     // Get company wallet
     let wallet = await Wallet.findByOwner(companyId, 'Company');
@@ -205,33 +203,36 @@ exports.getDashboard = async (req, res, next) => {
  */
 exports.getEmployees = async (req, res, next) => {
   try {
+    const { User } = getModels();
     const { status, department, search, page = 1, limit = 20 } = req.query;
 
-    const query = { 
-      company: req.user.company,
-      role: { $in: ['employee', 'company_admin'] }
+    const where = { 
+      companyId: req.user.company,
+      role: { [require('sequelize').Op.in]: ['employee', 'company_admin'] }
     };
 
-    if (status) query.status = status;
-    if (department) query.department = department;
+    if (status) where.status = status;
+    if (department) where.department = department;
     if (search) {
-      query.$or = [
-        { name: { $regex: search, $options: 'i' } },
-        { email: { $regex: search, $options: 'i' } },
-        { employeeId: { $regex: search, $options: 'i' } }
+      const { Op } = require('sequelize');
+      where[Op.or] = [
+        { name: { [Op.like]: `%${search}%` } },
+        { email: { [Op.like]: `%${search}%` } },
+        { employeeId: { [Op.like]: `%${search}%` } }
       ];
     }
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    const employees = await User.find(query)
-      .select('-password')
-      .populate('wallet')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
+    const { count, rows: employees } = await User.findAndCountAll({
+      where,
+      attributes: { exclude: ['password'] },
+      offset,
+      limit: parseInt(limit),
+      order: [['createdAt', 'DESC']]
+    });
 
-    const total = await User.countDocuments(query);
+    const total = count;
 
     res.status(200).json({
       success: true,
@@ -257,6 +258,7 @@ exports.getEmployees = async (req, res, next) => {
  */
 exports.addEmployee = async (req, res, next) => {
   try {
+    const { Company, User, Wallet, Notification } = getModels();
     const {
       name, email, phone, password, department, designation,
       employeeId, permissions, requiresApproval, approvalLimit
@@ -265,15 +267,14 @@ exports.addEmployee = async (req, res, next) => {
     const companyId = req.user.company;
 
     // Get company
-    const company = await Company.findById(companyId);
+    const company = await Company.findByPk(companyId);
 
-    // Check employee limit
-    if (!company.canAddEmployee()) {
-      return next(new AppError('Employee limit reached', 400));
+    if (!company) {
+      return next(new AppError('Company not found', 404));
     }
 
     // Check if email exists
-    const existingUser = await User.findOne({ email });
+    const existingUser = await User.findOne({ where: { email } });
     if (existingUser) {
       return next(new AppError('Email already exists', 400));
     }
@@ -281,8 +282,10 @@ exports.addEmployee = async (req, res, next) => {
     // Check if employeeId exists in company
     if (employeeId) {
       const existingEmpId = await User.findOne({ 
-        employeeId, 
-        company: companyId 
+        where: { 
+          employeeId, 
+          companyId: companyId 
+        }
       });
       if (existingEmpId) {
         return next(new AppError('Employee ID already exists', 400));
@@ -296,31 +299,51 @@ exports.addEmployee = async (req, res, next) => {
       phone,
       password,
       role: 'employee',
-      company: companyId,
+      companyId: companyId,
       department,
       designation,
       employeeId,
       permissions: permissions || [],
-      requiresApproval: requiresApproval || company.bookingSettings.requiresApproval,
-      approvalLimit: approvalLimit || company.bookingSettings.approvalThreshold,
+      requiresApproval: requiresApproval || false,
+      approvalLimit: approvalLimit || 0,
       status: 'active'
     });
 
-    // Create wallet for employee
-    await Wallet.createWallet(user._id, 'User', 0);
-
-    // Update company employee count
-    company.currentEmployeeCount += 1;
-    await company.save();
-
     // Create notification for employee
-    await Notification.createNotification({
-      user: user._id,
-      company: companyId,
-      title: 'Welcome to SimplifyMove',
-      message: `Your account has been created. You can now start booking travel and logistics services.`,
-      type: 'system',
-      priority: 'high'
+    try {
+      await Notification.create({
+        userId: user.id,
+        companyId: companyId,
+        title: 'Welcome to SimplifyMove',
+        message: `Your account has been created. You can now start booking travel and logistics services.`,
+        type: 'system',
+        priority: 'high'
+      });
+    } catch (err) {
+      logger.error('Failed to create notification:', err);
+    }
+
+    // Log audit trail for employee addition
+    await createAuditLog({
+      action: 'Employee Added',
+      category: 'user',
+      performedBy: req.user.id,
+      performedByRole: req.user.role,
+      companyId: companyId,
+      targetEntity: 'User',
+      targetId: user.id,
+      details: `New employee "${name}" (${email}) added to company "${company.name}"`,
+      changes: [
+        { field: 'Name', oldValue: '-', newValue: name },
+        { field: 'Email', oldValue: '-', newValue: email },
+        { field: 'Department', oldValue: '-', newValue: department || '-' },
+        { field: 'Designation', oldValue: '-', newValue: designation || '-' },
+        { field: 'Status', oldValue: '-', newValue: 'active' }
+      ],
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('user-agent'),
+      status: 'success',
+      severity: 'medium'
     });
 
     logger.info(`Employee added: ${email} to company ${company.name}`);
@@ -344,21 +367,32 @@ exports.addEmployee = async (req, res, next) => {
  */
 exports.updateEmployee = async (req, res, next) => {
   try {
+    const { User } = getModels();
     const {
       department, designation, permissions,
       requiresApproval, approvalLimit, status
     } = req.body;
 
-    const employee = await User.findById(req.params.id);
+    const employee = await User.findByPk(req.params.id);
 
     if (!employee) {
       return next(new AppError('Employee not found', 404));
     }
 
     // Check if employee belongs to company
-    if (employee.company.toString() !== req.user.company.toString()) {
+    if (employee.companyId !== req.user.company) {
       return next(new AppError('Access denied', 403));
     }
+
+    // Capture old data for audit
+    const oldData = {
+      department: employee.department,
+      designation: employee.designation,
+      permissions: employee.permissions,
+      requiresApproval: employee.requiresApproval,
+      approvalLimit: employee.approvalLimit,
+      status: employee.status
+    };
 
     const updateData = {};
     if (department) updateData.department = department;
@@ -370,13 +404,46 @@ exports.updateEmployee = async (req, res, next) => {
     if (approvalLimit) updateData.approvalLimit = approvalLimit;
     if (status) updateData.status = status;
 
-    const updatedEmployee = await User.findByIdAndUpdate(
-      req.params.id,
-      updateData,
-      { new: true, runValidators: true }
-    );
+    await employee.update(updateData);
 
-    logger.info(`Employee updated: ${updatedEmployee.email}`);
+    // Build changes array
+    const changes = [];
+    if (department && oldData.department !== department) {
+      changes.push({ field: 'Department', oldValue: oldData.department || '-', newValue: department });
+    }
+    if (designation && oldData.designation !== designation) {
+      changes.push({ field: 'Designation', oldValue: oldData.designation || '-', newValue: designation });
+    }
+    if (status && oldData.status !== status) {
+      changes.push({ field: 'Status', oldValue: oldData.status, newValue: status });
+    }
+    if (requiresApproval !== undefined && oldData.requiresApproval !== requiresApproval) {
+      changes.push({ field: 'Requires Approval', oldValue: String(oldData.requiresApproval), newValue: String(requiresApproval) });
+    }
+    if (approvalLimit && oldData.approvalLimit !== approvalLimit) {
+      changes.push({ field: 'Approval Limit', oldValue: String(oldData.approvalLimit), newValue: String(approvalLimit) });
+    }
+
+    // Log audit trail for employee update
+    if (changes.length > 0) {
+      await createAuditLog({
+        action: 'Employee Updated',
+        category: 'user',
+        performedBy: req.user.id,
+        performedByRole: req.user.role,
+        companyId: req.user.company,
+        targetEntity: 'User',
+        targetId: employee.id,
+        details: `Employee "${employee.name}" updated with ${changes.length} field(s)`,
+        changes,
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.get('user-agent'),
+        status: 'success',
+        severity: 'medium'
+      });
+    }
+
+    logger.info(`Employee updated: ${employee.email}`);
 
     res.status(200).json({
       success: true,
@@ -397,24 +464,42 @@ exports.updateEmployee = async (req, res, next) => {
  */
 exports.deactivateEmployee = async (req, res, next) => {
   try {
-    const employee = await User.findById(req.params.id);
+    const { User, Company } = getModels();
+    const employee = await User.findByPk(req.params.id);
 
     if (!employee) {
       return next(new AppError('Employee not found', 404));
     }
 
     // Check if employee belongs to company
-    if (employee.company.toString() !== req.user.company.toString()) {
+    if (employee.companyId !== req.user.company) {
       return next(new AppError('Access denied', 403));
     }
 
-    employee.status = 'inactive';
-    await employee.save();
+    const oldStatus = employee.status;
+    await employee.update({ status: 'inactive' });
 
-    // Update company employee count
-    const company = await Company.findById(req.user.company);
-    company.currentEmployeeCount = Math.max(0, company.currentEmployeeCount - 1);
-    await company.save();
+    // Get company details for audit log
+    const company = await Company.findByPk(req.user.company);
+
+    // Log audit trail for employee deactivation
+    await createAuditLog({
+      action: 'Employee Deactivated',
+      category: 'user',
+      performedBy: req.user.id,
+      performedByRole: req.user.role,
+      companyId: req.user.company,
+      targetEntity: 'User',
+      targetId: employee.id,
+      details: `Employee "${employee.name}" (${employee.email}) deactivated from company "${company?.name || 'Unknown'}"`,
+      changes: [
+        { field: 'Status', oldValue: oldStatus, newValue: 'inactive' }
+      ],
+      ipAddress: req.ip || req.connection.remoteAddress,
+      userAgent: req.get('user-agent'),
+      status: 'success',
+      severity: 'medium'
+    });
 
     logger.info(`Employee deactivated: ${employee.email}`);
 
@@ -436,41 +521,45 @@ exports.deactivateEmployee = async (req, res, next) => {
  */
 exports.getCompanyBookings = async (req, res, next) => {
   try {
+    const { Booking, User } = getModels();
     const { 
       status, serviceType, user, 
       startDate, endDate, page = 1, limit = 20 
     } = req.query;
 
-    const query = { company: req.user.company };
+    const { Op } = require('sequelize');
+    const where = { companyId: req.user.company };
 
-    if (status) query.status = status;
-    if (serviceType) query.serviceType = serviceType;
-    if (user) query.user = user;
+    if (status) where.status = status;
+    if (serviceType) where.serviceType = serviceType;
+    if (user) where.userId = user;
     
     if (startDate || endDate) {
-      query.createdAt = {};
-      if (startDate) query.createdAt.$gte = new Date(startDate);
-      if (endDate) query.createdAt.$lte = new Date(endDate);
+      where.createdAt = {};
+      if (startDate) where.createdAt[Op.gte] = new Date(startDate);
+      if (endDate) where.createdAt[Op.lte] = new Date(endDate);
     }
 
-    const skip = (parseInt(page) - 1) * parseInt(limit);
+    const offset = (parseInt(page) - 1) * parseInt(limit);
 
-    const bookings = await Booking.find(query)
-      .populate('user', 'name email department')
-      .populate('approvedBy', 'name email')
-      .sort({ createdAt: -1 })
-      .skip(skip)
-      .limit(parseInt(limit));
-
-    const total = await Booking.countDocuments(query);
+    const { count, rows: bookings } = await Booking.findAndCountAll({
+      where,
+      include: [
+        { model: User, as: 'user', attributes: ['name', 'email', 'department'] },
+        { model: User, as: 'approvedBy', attributes: ['name', 'email'] }
+      ],
+      offset,
+      limit: parseInt(limit),
+      order: [['createdAt', 'DESC']]
+    });
 
     res.status(200).json({
       success: true,
       data: bookings,
       pagination: {
-        total,
+        total: count,
         page: parseInt(page),
-        pages: Math.ceil(total / parseInt(limit)),
+        pages: Math.ceil(count / parseInt(limit)),
         limit: parseInt(limit)
       }
     });
@@ -488,7 +577,8 @@ exports.getCompanyBookings = async (req, res, next) => {
  */
 exports.getSettings = async (req, res, next) => {
   try {
-    const company = await Company.findById(req.user.company);
+    const { Company } = getModels();
+    const company = await Company.findByPk(req.user.company);
 
     res.status(200).json({
       success: true,
@@ -508,22 +598,65 @@ exports.getSettings = async (req, res, next) => {
  */
 exports.updateSettings = async (req, res, next) => {
   try {
+    const { Company } = getModels();
     const {
       bookingSettings, walletSettings, notificationSettings
     } = req.body;
 
+    const company = await Company.findByPk(req.user.company);
+    const oldData = company.toJSON();
+
     const updateData = {};
     if (bookingSettings) updateData.bookingSettings = bookingSettings;
-    if (walletSettings) updateData.wallet = walletSettings;
+    if (walletSettings) updateData.walletSettings = walletSettings;
     if (notificationSettings) {
       updateData.notificationSettings = notificationSettings;
     }
 
-    const company = await Company.findByIdAndUpdate(
-      req.user.company,
-      updateData,
-      { new: true, runValidators: true }
-    );
+    await company.update(updateData);
+
+    // Build changes array
+    const changes = [];
+    if (bookingSettings) {
+      changes.push({ 
+        field: 'Booking Settings', 
+        oldValue: JSON.stringify(oldData.bookingSettings || {}), 
+        newValue: JSON.stringify(bookingSettings) 
+      });
+    }
+    if (walletSettings) {
+      changes.push({ 
+        field: 'Wallet Settings', 
+        oldValue: JSON.stringify(oldData.walletSettings || {}), 
+        newValue: JSON.stringify(walletSettings) 
+      });
+    }
+    if (notificationSettings) {
+      changes.push({ 
+        field: 'Notification Settings', 
+        oldValue: JSON.stringify(oldData.notificationSettings || {}), 
+        newValue: JSON.stringify(notificationSettings) 
+      });
+    }
+
+    // Log audit trail for settings update
+    if (changes.length > 0) {
+      await createAuditLog({
+        action: 'Company Settings Updated',
+        category: 'company',
+        performedBy: req.user.id,
+        performedByRole: req.user.role,
+        companyId: req.user.company,
+        targetEntity: 'Company',
+        targetId: company.id,
+        details: `Company settings updated with ${changes.length} field(s)`,
+        changes,
+        ipAddress: req.ip || req.connection.remoteAddress,
+        userAgent: req.get('user-agent'),
+        status: 'success',
+        severity: 'medium'
+      });
+    }
 
     logger.info(`Company settings updated: ${company.name}`);
 

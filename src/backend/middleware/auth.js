@@ -41,14 +41,14 @@ exports.protect = async (req, res, next) => {
       }
 
       // Development mode: Create mock user if ID is dev
-      if (process.env.NODE_ENV === 'development' && (decoded.id === 'super-admin-dev' || decoded.id === 'super-admin')) {
+      if (process.env.NODE_ENV === 'development' && (decoded.id === 'super-admin-dev' || decoded.id === 'super-admin' || decoded.id === 'company-admin' || decoded.id === 'company-admin-dev')) {
         req.user = {
           id: decoded.id,
-          email: 'admin@simplifymove.com',
-          name: 'Super Admin',
+          email: decoded.email || 'admin@simplifymove.com',
+          name: decoded.name || 'Admin',
           role: decoded.role || 'super_admin',
           status: 'active',
-          company: null,
+          company: decoded.company || null,
           changedPasswordAfter: () => false,
           isLocked: () => false
         };

@@ -4,6 +4,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '../ui/tabs';
 import { WalletManagementAdmin } from './WalletManagementAdmin';
 import { PolicyBudget } from '../admin/PolicyBudget';
 import { CourierManagementClean } from './CourierManagementClean';
+import { EmployeeManagement } from './EmployeeManagement';
 import { Users, Wallet, Shield, Package } from 'lucide-react';
 
 export function ManageConsolidated() {
@@ -35,6 +36,10 @@ export function ManageConsolidated() {
             Courier Services
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="employees">
+          <EmployeeManagement />
+        </TabsContent>
 
         <TabsContent value="wallets">
           <WalletManagementAdmin />
