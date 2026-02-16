@@ -48,10 +48,12 @@ exports.protect = async (req, res, next) => {
           name: decoded.name || 'Admin',
           role: decoded.role || 'super_admin',
           status: 'active',
-          company: decoded.company || null,
+          company: decoded.companyId || null,
+          companyId: decoded.companyId || null,
           changedPasswordAfter: () => false,
           isLocked: () => false
         };
+        logger.info(`DEV MODE: Mock user created with role=${req.user.role}, company=${req.user.company}, companyId=${req.user.companyId}`);
         return next();
       }
 
@@ -98,6 +100,10 @@ exports.protect = async (req, res, next) => {
 
       // Grant access to protected route
       req.user = user;
+      // Map companyId to company for compatibility with controllers
+      if (user.companyId && !user.company) {
+        req.user.company = user.companyId;
+      }
       next();
 
     } catch (error) {

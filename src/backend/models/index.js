@@ -132,6 +132,82 @@ const initializeModels = (sequelizeInstance) => {
     status: { type: DataTypes.ENUM('pending', 'processing', 'completed', 'failed'), defaultValue: 'completed' }
   }, { timestamps: true, tableName: 'wallet_transactions' });
 
+  // Add instance methods to Wallet model
+  Wallet.prototype.credit = async function(amount, description, transactionType, referenceId, metadata) {
+    const balanceBefore = parseFloat(this.balance) || 0;
+    const balanceAfter = balanceBefore + parseFloat(amount);
+    
+    // Update wallet balance
+    this.balance = balanceAfter;
+    this.totalCredited = (parseFloat(this.totalCredited) || 0) + parseFloat(amount);
+    await this.save();
+    
+    // Create transaction record
+    const transaction = await WalletTransaction.create({
+      walletId: this.id,
+      transactionId: referenceId || `TXN-${Date.now()}`,
+      type: 'credit',
+      amount: parseFloat(amount),
+      balanceBefore,
+      balanceAfter,
+      description,
+      status: 'completed',
+      metadata: metadata || {}
+    });
+    
+    return transaction;
+  };
+
+  Wallet.prototype.debit = async function(amount, description, transactionType, referenceId, metadata) {
+    const balanceBefore = parseFloat(this.balance) || 0;
+    
+    // Check if sufficient funds
+    if (balanceBefore < parseFloat(amount)) {
+      throw new Error('Insufficient wallet balance');
+    }
+    
+    const balanceAfter = balanceBefore - parseFloat(amount);
+    
+    // Update wallet balance
+    this.balance = balanceAfter;
+    this.totalDebited = (parseFloat(this.totalDebited) || 0) + parseFloat(amount);
+    await this.save();
+    
+    // Create transaction record
+    const transaction = await WalletTransaction.create({
+      walletId: this.id,
+      transactionId: referenceId || `TXN-${Date.now()}`,
+      type: 'debit',
+      amount: parseFloat(amount),
+      balanceBefore,
+      balanceAfter,
+      description,
+      status: 'completed',
+      metadata: metadata || {}
+    });
+    
+    return transaction;
+  };
+
+  // Add static methods to Wallet model
+  Wallet.findByOwner = async function(ownerId, ownerModel) {
+    return await this.findOne({
+      where: {
+        ownerId,
+        ownerModel
+      }
+    });
+  };
+
+  Wallet.createWallet = async function(ownerId, ownerModel, initialBalance = 0) {
+    return await this.create({
+      ownerId,
+      ownerModel,
+      balance: parseFloat(initialBalance),
+      status: 'active'
+    });
+  };
+
   // Notification Model
   const Notification = instanceToUse.define('Notification', {
     id: { type: DataTypes.UUID, defaultValue: DataTypes.UUIDV4, primaryKey: true },

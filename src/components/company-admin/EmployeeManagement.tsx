@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Card } from '../ui/card';
@@ -12,6 +12,10 @@ import {
   Loader,
   ChevronDown,
   Search,
+  Upload,
+  Download,
+  Check,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner@2.0.3';
 import {
@@ -37,6 +41,8 @@ interface Employee {
   designation: string;
   status: 'active' | 'inactive' | 'suspended';
   joinDate: string;
+  walletBalance?: number;
+  _id?: string;
 }
 
 interface AddEmployeeForm {
@@ -47,11 +53,26 @@ interface AddEmployeeForm {
   designation: string;
 }
 
+interface ImportPreviewData {
+  name: string;
+  email: string;
+  phone: string;
+  department: string;
+  designation: string;
+  isValid: boolean;
+  errors: string[];
+}
+
 export function EmployeeManagement() {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [loading, setLoading] = useState(true);
   const [openAddDialog, setOpenAddDialog] = useState(false);
+  const [showImportPreview, setShowImportPreview] = useState(false);
+  const [importPreview, setImportPreview] = useState<ImportPreviewData[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const [walletRefreshTrigger, setWalletRefreshTrigger] = useState(0);
   const [newEmployee, setNewEmployee] = useState<AddEmployeeForm>({
     name: '',
     email: '',
@@ -63,6 +84,22 @@ export function EmployeeManagement() {
   // Fetch employees from backend
   useEffect(() => {
     fetchEmployees();
+  }, []);
+
+  // Fetch wallet balances when component loads or refresh is triggered
+  useEffect(() => {
+    if (employees.length > 0) {
+      fetchWalletBalances();
+    }
+  }, [walletRefreshTrigger]);
+
+  // Listen for wallet update events from other components
+  useEffect(() => {
+    const handleWalletUpdate = () => {
+      setWalletRefreshTrigger(prev => prev + 1);
+    };
+    window.addEventListener('walletUpdated', handleWalletUpdate);
+    return () => window.removeEventListener('walletUpdated', handleWalletUpdate);
   }, []);
 
   const fetchEmployees = async () => {
@@ -79,7 +116,10 @@ export function EmployeeManagement() {
 
       if (response.ok) {
         const data = await response.json();
-        setEmployees(data.data || []);
+        const empData = data.data || [];
+        setEmployees(empData);
+        // Fetch wallet balances for all employees
+        await fetchWalletBalancesForEmployees(empData);
       } else {
         // For demo purposes, show mock data if API not available
         setEmployees([
@@ -134,6 +174,162 @@ export function EmployeeManagement() {
     } finally {
       setLoading(false);
     }
+  };
+
+  // CSV Import Handlers
+  const handleImportClick = () => {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    if (!file.name.endsWith('.csv')) {
+      toast.error('Please upload a CSV file');
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      parseCSV(text);
+    };
+    reader.readAsText(file);
+
+    // Reset file input
+    if (fileInputRef.current) {
+      fileInputRef.current.value = '';
+    }
+  };
+
+  const parseCSV = (csvText: string) => {
+    const lines = csvText.split('\n').filter(line => line.trim());
+    if (lines.length < 2) {
+      toast.error('CSV file is empty or invalid');
+      return;
+    }
+
+    const headers = lines[0].split(',').map(h => h.trim().toLowerCase());
+    const requiredHeaders = ['name', 'email', 'phone', 'department', 'designation'];
+    
+    const missingHeaders = requiredHeaders.filter(h => !headers.includes(h));
+    if (missingHeaders.length > 0) {
+      toast.error(`Missing required columns: ${missingHeaders.join(', ')}`);
+      return;
+    }
+
+    const preview: ImportPreviewData[] = [];
+    
+    for (let i = 1; i < lines.length; i++) {
+      const values = lines[i].split(',').map(v => v.trim());
+      const row: any = {};
+      headers.forEach((header, index) => {
+        row[header] = values[index] || '';
+      });
+
+      const errors: string[] = [];
+      
+      // Validation
+      if (!row.name) errors.push('Name is required');
+      if (!row.email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(row.email)) {
+        errors.push('Valid email is required');
+      }
+      if (!row.phone) errors.push('Phone is required');
+      if (!row.department) errors.push('Department is required');
+      if (!row.designation) errors.push('Designation is required');
+
+      // Check duplicate email
+      if (employees.some(e => e.email.toLowerCase() === row.email.toLowerCase())) {
+        errors.push('Email already exists');
+      }
+
+      preview.push({
+        name: row.name,
+        email: row.email,
+        phone: row.phone,
+        department: row.department,
+        designation: row.designation,
+        isValid: errors.length === 0,
+        errors
+      });
+    }
+
+    setImportPreview(preview);
+    setShowImportPreview(true);
+  };
+
+  const handleConfirmImport = async () => {
+    const validRows = importPreview.filter(row => row.isValid);
+    
+    if (validRows.length === 0) {
+      toast.error('No valid rows to import');
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('token');
+      let successCount = 0;
+      let failureCount = 0;
+
+      for (const row of validRows) {
+        try {
+          const response = await fetch('http://localhost:5001/api/v1/companyAdmins/employees', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${token}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              name: row.name,
+              email: row.email,
+              phone: row.phone,
+              department: row.department,
+              designation: row.designation,
+              password: 'TempPassword123!',
+            }),
+          });
+
+          if (response.ok) {
+            successCount++;
+          } else {
+            failureCount++;
+          }
+        } catch (err) {
+          failureCount++;
+        }
+      }
+
+      // Refresh employee list
+      await fetchEmployees();
+
+      toast.success(
+        `Imported ${successCount} employees successfully${
+          failureCount > 0 ? `. Failed: ${failureCount}` : ''
+        }`
+      );
+      setShowImportPreview(false);
+      setImportPreview([]);
+    } catch (error) {
+      console.error('Import error:', error);
+      toast.error('Failed to import employees');
+    }
+  };
+
+  const downloadTemplate = () => {
+    const template = `name,email,phone,department,designation
+John Doe,john@company.com,+91 9876543210,Engineering,Senior Developer
+Jane Smith,jane@company.com,+91 9876543211,Finance,Financial Analyst
+Mike Johnson,mike@company.com,+91 9876543212,Sales,Sales Manager`;
+    
+    const blob = new Blob([template], { type: 'text/csv' });
+    const url = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `employee_import_template_${new Date().toISOString().split('T')[0]}.csv`;
+    a.click();
+    window.URL.revokeObjectURL(url);
+    toast.success('Template downloaded successfully');
   };
 
   const handleAddEmployee = async () => {
@@ -220,6 +416,49 @@ export function EmployeeManagement() {
     }
   };
 
+  const fetchWalletBalances = async () => {
+    if (employees.length === 0) return;
+    await fetchWalletBalancesForEmployees(employees);
+  };
+
+  const fetchWalletBalancesForEmployees = async (empList: Employee[]) => {
+    try {
+      const token = localStorage.getItem('token');
+      const companyId = localStorage.getItem('companyId');
+
+      if (!companyId) return;
+
+      // Fetch wallet summary which includes all employee wallet balances
+      const response = await fetch(`http://localhost:5001/api/v1/wallets/company/${companyId}/summary`, {
+        method: 'GET',
+        headers: {
+          'Authorization': `Bearer ${token}`,
+          'Content-Type': 'application/json',
+        },
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        const employeeWallets = data.data.employeeWallets || [];
+
+        // Create a map of employee ID to wallet balance
+        const walletMap = new Map();
+        employeeWallets.forEach((ew: any) => {
+          walletMap.set(ew.employeeId, parseFloat(ew.walletBalance) || 0);
+        });
+
+        // Update employees with wallet balances
+        const updatedEmployees = empList.map(emp => ({
+          ...emp,
+          walletBalance: walletMap.get(emp.id || emp._id) || 0
+        }));
+        setEmployees(updatedEmployees);
+      }
+    } catch (error) {
+      console.error('Error fetching wallet balances:', error);
+    }
+  };
+
   const filteredEmployees = employees.filter((emp) =>
     emp.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
     emp.email.toLowerCase().includes(searchTerm.toLowerCase())
@@ -248,13 +487,30 @@ export function EmployeeManagement() {
             Manage your company's employees and their roles
           </p>
         </div>
-        <Dialog open={openAddDialog} onOpenChange={setOpenAddDialog}>
-          <DialogTrigger asChild>
-            <Button className="bg-blue-600 hover:bg-blue-700">
-              <Plus className="w-4 h-4 mr-2" />
-              Add Employee
-            </Button>
-          </DialogTrigger>
+        <div className="flex gap-2">
+          <Button 
+            variant="outline" 
+            onClick={downloadTemplate}
+            title="Download CSV template for bulk import"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            Template
+          </Button>
+          <Button 
+            variant="outline" 
+            onClick={handleImportClick}
+            title="Upload CSV file to bulk add employees"
+          >
+            <Upload className="w-4 h-4 mr-2" />
+            Import Bulk
+          </Button>
+          <Dialog open={openAddDialog} onOpenChange={setOpenAddDialog}>
+            <DialogTrigger asChild>
+              <Button className="bg-blue-600 hover:bg-blue-700">
+                <Plus className="w-4 h-4 mr-2" />
+                Add Employee
+              </Button>
+            </DialogTrigger>
           <DialogContent>
             <DialogHeader>
               <DialogTitle>Add New Employee</DialogTitle>
@@ -334,6 +590,7 @@ export function EmployeeManagement() {
             </div>
           </DialogContent>
         </Dialog>
+        </div>
       </div>
 
       {/* Search Bar */}
@@ -379,6 +636,9 @@ export function EmployeeManagement() {
                     Designation
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">
+                    Wallet Balance
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">
                     Status
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-semibold text-gray-900 uppercase tracking-wider">
@@ -405,6 +665,11 @@ export function EmployeeManagement() {
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-600">
                       {employee.designation}
+                    </td>
+                    <td className="px-6 py-4 whitespace-nowrap">
+                      <div className="text-sm font-semibold text-blue-600">
+                        ₹{(employee.walletBalance || 0).toLocaleString('en-IN', { maximumFractionDigits: 2 })}
+                      </div>
                     </td>
                     <td className="px-6 py-4 whitespace-nowrap">
                       <Badge className={getStatusColor(employee.status)}>
@@ -446,6 +711,91 @@ export function EmployeeManagement() {
           </div>
         )}
       </Card>
+
+      {/* Hidden file input */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept=".csv"
+        onChange={handleFileUpload}
+        className="hidden"
+      />
+
+      {/* Import Preview Dialog */}
+      <Dialog open={showImportPreview} onOpenChange={setShowImportPreview}>
+        <DialogContent className="max-w-4xl max-h-[80vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle>Import Preview</DialogTitle>
+          </DialogHeader>
+
+          <div className="flex-1 overflow-auto">
+            <div className="space-y-4 p-4">
+              {importPreview.length === 0 ? (
+                <p className="text-gray-600">No data to import</p>
+              ) : (
+                <div className="space-y-2">
+                  {importPreview.map((row, index) => (
+                    <div
+                      key={index}
+                      className={`p-3 rounded-lg border-2 ${
+                        row.isValid
+                          ? 'border-green-300 bg-green-50'
+                          : 'border-red-300 bg-red-50'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between mb-2">
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900">{row.name}</p>
+                          <p className="text-sm text-gray-600">{row.email}</p>
+                          <p className="text-sm text-gray-600">
+                            {row.department} - {row.designation}
+                          </p>
+                        </div>
+                        {row.isValid ? (
+                          <Check className="w-5 h-5 text-green-600 flex-shrink-0" />
+                        ) : (
+                          <X className="w-5 h-5 text-red-600 flex-shrink-0" />
+                        )}
+                      </div>
+                      {row.errors.length > 0 && (
+                        <div className="text-sm text-red-600 space-y-1">
+                          {row.errors.map((error, i) => (
+                            <p key={i}>• {error}</p>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div className="bg-gray-50 p-4 border-t flex items-center justify-between">
+            <div className="text-sm text-gray-600">
+              Valid rows: {importPreview.filter(r => r.isValid).length} /{' '}
+              {importPreview.length}
+            </div>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setShowImportPreview(false)}
+              >
+                Cancel
+              </Button>
+              <Button
+                onClick={handleConfirmImport}
+                disabled={
+                  importPreview.filter(r => r.isValid).length === 0
+                }
+                className="bg-blue-600 hover:bg-blue-700"
+              >
+                Import {importPreview.filter(r => r.isValid).length} Employees
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

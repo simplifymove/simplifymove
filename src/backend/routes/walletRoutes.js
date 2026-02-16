@@ -8,12 +8,14 @@ const { body } = require('express-validator');
 const {
   getWallet,
   getCompanyWallet,
+  getCompanyWalletSummary,
   rechargeWallet,
   rechargeCompanyWallet,
   getTransactions,
   getTransactionSummary,
   transferFunds,
-  deductFromWallet
+  deductFromWallet,
+  addFundsToEmployees
 } = require('../controllers/walletController');
 
 const { protect, authorize } = require('../middleware/auth');
@@ -33,8 +35,22 @@ const transferValidation = [
 // Protect all routes
 router.use(protect);
 
+// Add funds to employees or department (must come before /:userId routes)
+router.post(
+  '/add-funds/batch',
+  authorize('company_admin', 'super_admin'),
+  [
+    body('amount').isFloat({ min: 1 }).withMessage('Amount must be greater than 0'),
+    body('targetType').isIn(['employee', 'department']).withMessage('targetType must be employee or department'),
+    body('selectedTarget').notEmpty().withMessage('selectedTarget is required'),
+    body('walletType').notEmpty().withMessage('walletType is required')
+  ],
+  addFundsToEmployees
+);
+
 // Company wallet routes
 router.get('/company/:companyId', getCompanyWallet);
+router.get('/company/:companyId/summary', getCompanyWalletSummary);
 router.post(
   '/company/:companyId/recharge',
   authorize('company_admin', 'super_admin'),

@@ -167,6 +167,11 @@ const connectDB = async () => {
     logger.info('MySQL connection successful');
     console.log('✅ MySQL connection successful');
     
+    // Initialize models
+    initializeModels(sequelize);
+    logger.info('Models initialized');
+    console.log('✅ Models initialized');
+    
     // Skip sync since database already exists with sample data
     // and schema matches the existing tables
     logger.info('Using existing database schema');

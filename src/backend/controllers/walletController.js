@@ -92,6 +92,114 @@ exports.getCompanyWallet = async (req, res, next) => {
 };
 
 /**
+ * @desc    Get company wallet summary with employee balances
+ * @route   GET /api/v1/wallets/company/:companyId/summary
+ * @access  Company Admin, Super Admin
+ */
+exports.getCompanyWalletSummary = async (req, res, next) => {
+  try {
+    const { companyId } = req.params;
+    const { getModels } = require('../models/index');
+    const models = getModels();
+    const { User, Wallet, WalletTransaction } = models;
+
+    // Check permissions
+    if (req.user.role === 'company_admin' && companyId !== req.user.company.toString()) {
+      return next(new AppError('Access denied', 403));
+    }
+
+    // Get company wallet
+    let companyWallet = await Wallet.findByOwner(companyId, 'Company');
+    if (!companyWallet) {
+      companyWallet = await Wallet.createWallet(companyId, 'Company', 0);
+    }
+
+    // Get all employees in the company
+    const employees = await User.findAll({
+      where: { companyId: companyId, role: 'employee' }
+    });
+
+    // Get wallet balance for each employee
+    const employeeWallets = [];
+    for (const employee of employees) {
+      let empWallet = await Wallet.findByOwner(employee.id || employee._id, 'User');
+      if (!empWallet) {
+        empWallet = await Wallet.createWallet(employee.id || employee._id, 'User', 0);
+      }
+      employeeWallets.push({
+        employeeId: employee.id || employee._id,
+        employeeName: employee.name,
+        email: employee.email,
+        walletBalance: empWallet.balance,
+        totalCredited: empWallet.totalCredited,
+        totalDebited: empWallet.totalDebited,
+        status: empWallet.status
+      });
+    }
+
+    // Get recent transactions across all employee wallets
+    const recentTransactions = await WalletTransaction.findAll({
+      limit: 50,
+      order: [['createdAt', 'DESC']]
+    });
+
+    // Map transactions to include employee information
+    const transactionsWithEmployees = [];
+    for (const transaction of recentTransactions) {
+      try {
+        // Get the wallet for this transaction
+        const wallet = await Wallet.findByPk(transaction.walletId);
+        if (!wallet || wallet.ownerModel !== 'User') continue;
+
+        // Get the employee who owns the wallet
+        const employee = await User.findByPk(wallet.ownerId);
+        if (!employee) continue;
+
+        transactionsWithEmployees.push({
+          id: transaction.id,
+          type: transaction.type,
+          amount: transaction.amount,
+          description: transaction.description,
+          status: transaction.status,
+          createdAt: transaction.createdAt,
+          employeeName: employee.name,
+          employeeId: employee.id || employee._id,
+          email: employee.email
+        });
+      } catch (err) {
+        logger.warn(`Error processing transaction ${transaction.id}:`, err.message);
+        continue;
+      }
+    }
+
+    res.status(200).json({
+      success: true,
+      data: {
+        companyWallet: {
+          id: companyWallet.id,
+          balance: companyWallet.balance,
+          totalCredited: companyWallet.totalCredited,
+          totalDebited: companyWallet.totalDebited,
+          status: companyWallet.status
+        },
+        employeeWallets,
+        recentTransactions: transactionsWithEmployees,
+        summary: {
+          totalEmployees: employees.length,
+          totalAllocated: employeeWallets.reduce((sum, w) => sum + parseFloat(w.totalCredited || 0), 0),
+          totalSpent: employeeWallets.reduce((sum, w) => sum + parseFloat(w.totalDebited || 0), 0),
+          corporateWalletBalance: parseFloat(companyWallet.balance || 0)
+        }
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error fetching company wallet summary:', error);
+    next(error);
+  }
+};
+
+/**
  * @desc    Recharge wallet
  * @route   POST /api/v1/wallets/:userId/recharge
  * @access  User (own), Company Admin, Super Admin
@@ -494,6 +602,160 @@ exports.deductFromWallet = async (req, res, next) => {
 
   } catch (error) {
     logger.error('Error deducting from wallet:', error);
+    next(error);
+  }
+};
+/**
+ * @desc    Add funds to employee or employees in a department
+ * @route   POST /api/v1/wallets/add-funds
+ * @access  Company Admin, Super Admin
+ */
+exports.addFundsToEmployees = async (req, res, next) => {
+  try {
+    const { targetType, selectedTarget, amount, walletType } = req.body;
+    const { getModels } = require('../models');
+    const models = getModels();
+    const UserModel = models.User;
+    const WalletModel = models.Wallet;
+
+    if (!amount || amount <= 0) {
+      return next(new AppError('Valid amount is required', 400));
+    }
+
+    if (!targetType || !['employee', 'department'].includes(targetType)) {
+      return next(new AppError('Valid targetType is required (employee or department)', 400));
+    }
+
+    if (!selectedTarget) {
+      return next(new AppError('Selected target is required', 400));
+    }
+
+    if (!walletType) {
+      return next(new AppError('Wallet type is required', 400));
+    }
+
+    let employees = [];
+    let successCount = 0;
+    let failureCount = 0;
+    const transactions = [];
+
+    // Fetch employees based on target type
+    if (targetType === 'employee') {
+      const employee = await UserModel.findByPk(selectedTarget);
+      if (!employee) {
+        return next(new AppError('Employee not found', 404));
+      }
+      // Check permission
+      if (req.user.role === 'company_admin' && employee.companyId !== req.user.companyId) {
+        return next(new AppError('Access denied', 403));
+      }
+      employees = [employee];
+    } else if (targetType === 'department') {
+      // Get all employees in the department
+      employees = await UserModel.findAll({
+        where: { 
+          department: selectedTarget,
+          role: 'employee'
+        }
+      });
+
+      if (req.user.role === 'company_admin') {
+        // Filter employees to only those in company admin's company
+        employees = employees.filter(emp => emp.companyId === req.user.companyId);
+      }
+
+      if (employees.length === 0) {
+        return next(new AppError('No employees found in the selected department', 404));
+      }
+    }
+
+    // Process each employee
+    for (const employee of employees) {
+      try {
+        let wallet = await WalletModel.findByOwner(employee.id || employee._id, 'User');
+
+        // Create wallet if doesn't exist
+        if (!wallet) {
+          wallet = await WalletModel.createWallet(employee.id || employee._id, 'User', 0);
+        }
+
+        // Add credit to wallet based on wallet type
+        const walletsToUpdate = walletType === 'both' 
+          ? ['business', 'personal']
+          : [walletType];
+
+        for (const wType of walletsToUpdate) {
+          const transaction = await wallet.credit(
+            amount,
+            `Funds added by ${req.user.role === 'company_admin' ? 'Company Admin' : 'Super Admin'}`,
+            'admin_credit',
+            null,
+            {
+              walletType: wType,
+              targetType,
+              addedBy: req.user._id || req.user.id
+            }
+          );
+
+          transactions.push({
+            employeeId: employee.id || employee._id,
+            employeeName: employee.name,
+            amount,
+            walletType: wType,
+            transaction
+          });
+        }
+
+        // Create notification
+        await Notification.createNotification({
+          user: employee.id || employee._id,
+          title: 'Wallet Credited',
+          message: `₹${amount} has been added to your ${walletType === 'both' ? 'wallets' : walletType + ' wallet'}.`,
+          type: 'wallet',
+          priority: 'medium'
+        });
+
+        successCount++;
+
+        // Emit socket event
+        const io = req.app.get('io');
+        if (io) {
+          io.emitToUser(employee.id || employee._id, 'wallet:updated', { 
+            amount, 
+            balance: wallet.balance,
+            walletType
+          });
+        }
+
+      } catch (error) {
+        logger.error(`Error adding funds to employee ${employee.id || employee._id}: ${error.message}`);
+        failureCount++;
+      }
+    }
+
+    const message = targetType === 'employee'
+      ? `₹${amount} added to ${employees[0].name}'s wallet`
+      : `₹${amount} added to ${successCount} employees in ${selectedTarget} department${failureCount > 0 ? ` (${failureCount} failed)` : ''}`;
+
+    logger.info(`Funds added: ${targetType} - ${selectedTarget} - ₹${amount} by ${req.user.email || req.user._id}`);
+
+    res.status(200).json({
+      success: true,
+      message,
+      data: {
+        targetType,
+        selectedTarget,
+        amount,
+        walletType,
+        successCount,
+        failureCount,
+        totalProcessed: employees.length,
+        transactions
+      }
+    });
+
+  } catch (error) {
+    logger.error('Error adding funds to employees:', error);
     next(error);
   }
 };

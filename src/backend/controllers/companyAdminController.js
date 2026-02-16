@@ -265,11 +265,17 @@ exports.addEmployee = async (req, res, next) => {
     } = req.body;
 
     const companyId = req.user.company;
+    
+    // Debug logging
+    logger.info(`ADD EMPLOYEE DEBUG: req.user.company=${companyId}, req.user.companyId=${req.user.companyId}, req.user.id=${req.user.id}`);
 
     // Get company
     const company = await Company.findByPk(companyId);
+    
+    logger.info(`Company lookup result for ${companyId}: ${company ? company.name : 'NOT FOUND'}`);
 
     if (!company) {
+      logger.error(`Company not found for ID: ${companyId}`);
       return next(new AppError('Company not found', 404));
     }
 

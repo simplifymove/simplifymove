@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Button } from '../ui/button';
-import { ArrowLeft, Building2, Lock, Mail } from 'lucide-react';
+import { ArrowLeft, Building2, Lock, Mail, Loader } from 'lucide-react';
+import { toast } from 'sonner@2.0.3';
 
 interface CompanyAdminLoginProps {
   onLogin: () => void;
@@ -10,16 +11,45 @@ interface CompanyAdminLoginProps {
 export function CompanyAdminLogin({ onLogin, onBack }: CompanyAdminLoginProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    // For demo purposes, set a mock JWT token for company admin with company ID
-    const mockToken = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpZCI6ImNvbXBhbnktYWRtaW4iLCJyb2xlIjoiY29tcGFueV9hZG1pbiIsIm5hbWUiOiJDb21wYW55IEFkbWluIiwiY29tcGFueSI6IjYzOTEzNDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwIn0.mock';
-    localStorage.setItem('token', mockToken);
-    localStorage.setItem('userRole', 'company_admin');
-    localStorage.setItem('userEmail', email);
-    localStorage.setItem('companyId', '639134000000000000000000');
-    onLogin();
+    setLoading(true);
+    
+    try {
+      const response = await fetch('http://localhost:5001/api/v1/auth/login', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          email,
+          password,
+          role: 'company_admin'
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok && data.token) {
+        localStorage.setItem('token', data.token);
+        localStorage.setItem('userRole', 'company_admin');
+        localStorage.setItem('userEmail', data.data?.email || email);
+        if (data.data?.companyId) {
+          localStorage.setItem('companyId', data.data.companyId);
+        }
+        toast.success('Login successful!');
+        onLogin();
+      } else {
+        toast.error(data.message || 'Login failed');
+      }
+    } catch (error) {
+      console.error('Login error:', error);
+      toast.error('Failed to connect to server');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -101,9 +131,11 @@ export function CompanyAdminLogin({ onLogin, onBack }: CompanyAdminLoginProps) {
 
             <Button
               type="submit"
-              className="w-full bg-[#000035] hover:bg-[#000052] text-white py-6 rounded-lg font-medium transition-colors"
+              disabled={loading}
+              className="w-full bg-[#000035] hover:bg-[#000052] text-white py-6 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
             >
-              Sign In to Dashboard
+              {loading && <Loader className="w-4 h-4 animate-spin" />}
+              {loading ? 'Signing in...' : 'Sign In to Dashboard'}
             </Button>
           </form>
 

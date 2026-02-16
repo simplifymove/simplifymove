@@ -8,11 +8,12 @@ const User = require('../models/User');
 const { AppError } = require('../middleware/errorHandler');
 const { logger } = require('../utils/logger');
 const { createAuditLog } = require('../utils/auditLog');
+const { getModels } = require('../models');
 
 // Generate JWT Token
-const generateToken = (userId, role = 'super_admin') => {
+const generateToken = (userId, role = 'super_admin', companyId = null) => {
   return jwt.sign(
-    { id: userId, role },
+    { id: userId, role, companyId },
     process.env.JWT_SECRET || 'your-secret-key-change-in-production',
     { expiresIn: '7d' }
   );
@@ -32,14 +33,35 @@ exports.login = async (req, res, next) => {
 
     // Development mode: Allow demo login without database
     if (process.env.NODE_ENV === 'development') {
-      const devToken = generateToken('super-admin-dev', role || 'super_admin');
+      const userRole = role || 'super_admin';
+      let companyId = null;
+
+      // For company admin, fetch the first company from database
+      if (userRole === 'company_admin') {
+        try {
+          const { Company } = getModels();
+          logger.info('LOGIN: Fetching company for company_admin role');
+          const company = await Company.findOne();
+          if (company) {
+            companyId = company.id;
+            logger.info(`LOGIN: Found company: ${company.name} (${companyId})`);
+          } else {
+            logger.warn('LOGIN: No companies found in database for company_admin');
+          }
+        } catch (err) {
+          logger.error('LOGIN: Could not fetch company:', err.message);
+        }
+      }
+
+      logger.info(`LOGIN: Generated token for ${userRole} with companyId=${companyId}`);
+      const devToken = generateToken('super-admin-dev', userRole, companyId);
       
       // Log development login
       await createAuditLog({
         action: 'User Login',
         category: 'system',
         performedBy: 'super-admin-dev',
-        performedByRole: role || 'super_admin',
+        performedByRole: userRole,
         targetEntity: 'User',
         targetId: 'super-admin-dev',
         details: `Development user logged in with email: ${email}`,
@@ -56,7 +78,8 @@ exports.login = async (req, res, next) => {
           id: 'super-admin-dev',
           email: email || 'admin@simplifymove.com',
           name: 'Super Admin',
-          role: role || 'super_admin',
+          role: userRole,
+          companyId: companyId,
           token: devToken
         },
         token: devToken
@@ -81,7 +104,7 @@ exports.login = async (req, res, next) => {
       return next(new AppError('Invalid email or password', 401));
     }
 
-    const token = generateToken(user.id, user.role);
+    const token = generateToken(user.id, user.role, user.companyId);
 
     res.status(200).json({
       success: true,
@@ -91,6 +114,7 @@ exports.login = async (req, res, next) => {
         email: user.email,
         name: user.name,
         role: user.role,
+        companyId: user.companyId,
         token
       },
       token
