@@ -39,6 +39,7 @@ const companyAdminRoutes = require('./routes/companyAdminRoutes');
 const auditLogRoutes = require('./routes/auditLogRoutes');
 const vendorRoutes = require('./routes/vendorRoutes');
 const emailConfigRoutes = require('./routes/emailConfigRoutes');
+const travelRoutes = require('./routes/travelRoutes');
 
 // Import middleware
 const { errorHandler } = require('./middleware/errorHandler');
@@ -125,6 +126,7 @@ app.use(`/api/${API_VERSION}/companyAdmins`, companyAdminRoutes);
 app.use(`/api/${API_VERSION}/audit-logs`, auditLogRoutes);
 app.use(`/api/${API_VERSION}/vendors`, vendorRoutes);
 app.use(`/api/${API_VERSION}/email-config`, emailConfigRoutes);
+app.use(`/api/${API_VERSION}/travel`, travelRoutes);
 
 // Health Check Route
 app.get('/health', (req, res) => {

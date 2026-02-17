@@ -11,6 +11,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '../ui/select';
+import { CourierManagementClean } from './CourierManagementClean';
 import {
   CheckCircle2,
   XCircle,
@@ -214,7 +215,7 @@ export function ApprovalsConsolidated() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Approvals Center</h1>
-          <p className="text-sm text-gray-600 mt-1">Review and approve all requests in one place</p>
+          <p className="text-sm text-gray-600 mt-1">Review and approve all requests, courier services, and more in one place</p>
         </div>
         <div className="flex items-center gap-3">
           <Badge className="bg-orange-100 text-orange-700 text-base px-4 py-2">
@@ -331,6 +332,10 @@ export function ApprovalsConsolidated() {
             <Zap className="w-4 h-4 mr-2" />
             Utility Bills ({utilityApprovals.length})
           </TabsTrigger>
+          <TabsTrigger value="courier" className="data-[state=active]:bg-blue-50 data-[state=active]:text-blue-700">
+            <Package className="w-4 h-4 mr-2" />
+            Courier Services
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="travel" className="space-y-4">
@@ -375,6 +380,10 @@ export function ApprovalsConsolidated() {
               <p className="text-gray-600">No utility bill requests found</p>
             </Card>
           )}
+        </TabsContent>
+
+        <TabsContent value="courier" className="space-y-4">
+          <CourierManagementClean />
         </TabsContent>
       </Tabs>
     </div>
